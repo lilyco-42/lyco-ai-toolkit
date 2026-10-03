@@ -287,7 +287,9 @@ impl Glb {
             .buffer_views
             .get(view_index)
             .with_context(|| format!("no bufferView {view_index}"))?;
-        Ok(view.byte_stride.unwrap_or_else(|| element_size(&acc.kind, acc.component_type)))
+        Ok(view
+            .byte_stride
+            .unwrap_or_else(|| element_size(&acc.kind, acc.component_type)))
     }
 }
 
@@ -383,7 +385,9 @@ mod tests {
         assert_eq!(glb.gltf.nodes[0].name.as_deref(), Some("Body"));
 
         let prim = &glb.gltf.meshes[0].primitives[0];
-        let pos = glb.read_vec3(prim.attributes.position.unwrap()).expect("pos");
+        let pos = glb
+            .read_vec3(prim.attributes.position.unwrap())
+            .expect("pos");
         assert_eq!(pos, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
         let idx = glb.read_indices(prim.indices.unwrap()).expect("idx");

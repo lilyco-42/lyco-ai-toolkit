@@ -17,7 +17,7 @@
 
 pub mod glb;
 
-pub use glb::{Gltf, Glb};
+pub use glb::{Glb, Gltf};
 
 #[cfg(test)]
 mod tests {
