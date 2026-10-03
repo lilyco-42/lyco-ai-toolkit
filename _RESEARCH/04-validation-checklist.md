@@ -40,10 +40,17 @@
       无 cube 的关节骨、mirror、零尺寸面；校验覆盖 identifier 前缀、贴图尺寸、
       重名骨、缺失父骨、父子环、负尺寸、非有限值、未知面名
       —— 测试 **10 passed**（含对官方 armor_stand 样本的解析 + JSON 无损往返）
-- [ ] **F3 几何转换**：GLB 三角面 → Bedrock 盒模型（体素化 / 盒拟合）
-      —— 这是本项目最硬的算法部分，尚未开始
-- [ ] **F2 humanoid**：标准玩家模型生成器（把 F1 皮肤的 UV 映射到骨骼）
-      —— 待核实 Bedrock 正/背面命名与皮肤 front/back 的对应关系
+- [x] **F3 几何转换**：`lyco-bsm::voxel` + `lyco-bsm::convert`
+      - `voxelize_surface()`：**按点到三角形距离**判定体素占用（半径 = 半个体素对角线）
+      - `merge_boxes()`：三阶段贪心（先 X，再 Z，再 Y）把体素并成盒
+      - `convert_glb()`：场景图 → 世界空间三角面 → 体素 → 盒 → Bedrock 几何
+        **+ 生成贴图图集**（每个盒子一个格子，填该盒的平均源色）
+      - 支持节点 TRS / matrix、线性色→sRGB、非三角图元跳过、场景图深度上限
+      —— 测试 16 passed
+      - **验收**：CI 用 python 现造 GLB 走完整转换（1 三角面 → 151 体素 → 15 盒），
+        产出几何再次通过校验，贴图 PNG 头被独立读取
+- [x] **F2 humanoid**：标准玩家模型生成器（6 骨 12 cube，UV 取自 F1 皮肤锚点表）
+      —— Bedrock 的 box UV 与皮肤 box 展开同源，由官方 armor_stand 样本交叉验证
 - [ ] 接 Hunyuan3D-2.0 subprocess（16GB）—— **需要 GPU 主机**
 - **验收标准（修订）**：Blockbench 能导入产出的 `.geo.json`，骨骼 + per-face UV 完整
 
@@ -152,12 +159,12 @@ CI 断言 `('model', False)` 与 `('portrait', True)` 同时成立。
 | 能力 | crate | 测试 | CI 额外验证 |
 |---|---|---|---|
 | F1 MC skin | lyco-mc-skin | 35 | skin 闭环 + 垃圾输入必须失败 |
-| F2/F3 模型 | lyco-bsm | 30 | humanoid 闭环 + Python 造真实 GLB 喂给 glb-info |
+| F2/F3 模型 + 转换 | lyco-bsm | 46 | humanoid + glb-info + **真实 GLB 转换** |
 | F6 BGM | lyco-audio | 21 | **Python `wave` 独立解码**校验写出器 |
 | F7 图像 | lyco-image | 16 | 纯色画布必须被拒绝 |
 | F8 歌词 | lyco-lyrics | 20 | 标记结构断言 + 只吐散文的写入器必须被拒 |
 | S5 bundle | lyco-bundle | 6 | 五产物齐备 + 直读 PNG 头核对尺寸 |
-| **合计** | | **128** | clippy -D warnings + fmt + build + 5 组冒烟测试 |
+| **合计** | | **144** | clippy -D warnings + fmt + build + 5 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
 因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
@@ -176,3 +183,16 @@ lyco-cli portrait  # a single portrait
 
 需要模型的（扩散 / 音频引擎 / LLM）都通过 `--backend` 指向子进程；
 内置 `stub` 后端在每个界面都被标注为 placeholder。
+## 记录：一个被测试逼出来的算法缺陷（S2d）
+
+第一版体素化用**重心坐标采样**（沿三角形边取固定步数）。结果：一个立方体壳被合并成 **286 个盒子**。
+
+原因不是断言太严，而是采样步数被我硬编码上限为 24，于是**采样间距（0.118）大于体素边长（0.083）**，
+壳上出现大量空洞。空洞会让贪心盒合并剧烈碎片化。
+
+**修法**：改为**按点到三角形的距离**判定体素占用（阈值 = 半个体素对角线）。
+这样无论三角形比体素大多少都不会有洞，代价是每个三角形只遍历它 AABB 覆盖的体素。
+并补了两个测试钉死它：`the_shell_is_watertight_with_no_gaps` 与
+`a_cube_shell_merges_into_a_handful_of_boxes`（后者在修复前会以 286 失败）。
+
+教训：**硬编码的采样上限在几何算法里就是正确性漏洞。**
