@@ -190,8 +190,8 @@ impl Grid {
         let mut n = 0u32;
         for (i, occupied) in self.occupied.iter().enumerate() {
             if *occupied {
-                for c in 0..3 {
-                    sum[c] += self.colors[i][c] as u32;
+                for (slot, value) in sum.iter_mut().zip(self.colors[i].iter()) {
+                    *slot += *value as u32;
                 }
                 n += 1;
             }
@@ -389,8 +389,8 @@ pub fn box_color(grid: &Grid, b: &Box3) -> [u8; 3] {
         for gy in b.min[1]..b.min[1] + b.size[1] {
             for gx in b.min[0]..b.min[0] + b.size[0] {
                 let c = grid.color(gx, gy, gz);
-                for k in 0..3 {
-                    sum[k] += c[k] as u32;
+                for (slot, value) in sum.iter_mut().zip(c.iter()) {
+                    *slot += *value as u32;
                 }
                 n += 1;
             }

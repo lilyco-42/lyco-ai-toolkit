@@ -212,7 +212,8 @@ fn walk(
                 match prim.indices {
                     Some(accessor) => {
                         let indices = glb.read_indices(accessor)?;
-                        for chunk in indices.chunks_exact(3) {
+                        let (tris, _) = indices.as_chunks::<3>();
+                        for chunk in tris {
                             let a = chunk[0] as usize;
                             let b = chunk[1] as usize;
                             let c = chunk[2] as usize;
@@ -229,7 +230,8 @@ fn walk(
                         }
                     }
                     None => {
-                        for chunk in world_points.chunks_exact(3) {
+                        let (tris, _) = world_points.as_chunks::<3>();
+                        for chunk in tris {
                             out.push(Triangle {
                                 a: chunk[0],
                                 b: chunk[1],
