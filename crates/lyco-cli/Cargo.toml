@@ -7,6 +7,6 @@ license.workspace = true
 [dependencies]
 clap = { workspace = true }
 anyhow = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+lyco-mc-skin = { path = "../lyco-mc-skin" }
 lyco-bundle = { path = "../lyco-bundle" }

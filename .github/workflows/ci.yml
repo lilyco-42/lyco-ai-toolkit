@@ -27,15 +27,41 @@ jobs:
       - name: build
         run: cargo build --workspace
 
-      - name: cli surface smoke test
+      - name: cli must fail fast on unimplemented subcommands
         run: |
           set -euo pipefail
           ./target/debug/lyco-cli --version
           ./target/debug/lyco-cli --help
-          # Scaffolded subcommands must fail fast until implemented, so a
-          # green pipeline can never imply that assets were produced.
           if ./target/debug/lyco-cli bundle --prompt x; then
             echo 'scaffold subcommands must fail fast until implemented'
+            exit 1
+          fi
+
+      # Proves F1 end to end through the real binary, not just unit tests.
+      - name: skin roundtrip smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+
+          ./target/debug/lyco-cli skin template --out "$d/skin.png"
+          ./target/debug/lyco-cli skin validate "$d/skin.png"
+          ./target/debug/lyco-cli skin info "$d/skin.png"
+
+          # classic template must be detected as classic
+          ./target/debug/lyco-cli skin info "$d/skin.png" | grep -q 'classic'
+
+          # slim template must be detected as slim
+          ./target/debug/lyco-cli skin template --out "$d/slim.png" --arm slim
+          ./target/debug/lyco-cli skin info "$d/slim.png" | grep -q 'slim'
+
+          # quantization must shrink the palette and stay structurally valid
+          ./target/debug/lyco-cli skin quantize "$d/skin.png" --out "$d/q.png" --colors 6
+          ./target/debug/lyco-cli skin validate --json "$d/q.png"
+
+          # garbage input must be rejected with a non-zero exit
+          head -c 256 /dev/urandom > "$d/bad.png"
+          if ./target/debug/lyco-cli skin validate "$d/bad.png" 2>/dev/null; then
+            echo 'an unreadable skin must exit non-zero'
             exit 1
           fi
 
