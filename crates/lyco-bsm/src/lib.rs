@@ -20,8 +20,7 @@ pub mod bedrock;
 pub mod glb;
 
 pub use bedrock::{
-    Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Problem, Uv, FACES,
-    FORMAT_VERSION,
+    Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Problem, Uv, FACES, FORMAT_VERSION,
 };
 pub use glb::{Glb, Gltf};
 

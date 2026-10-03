@@ -217,9 +217,7 @@ impl Geometry {
                     });
                     break;
                 }
-                cursor = by_name
-                    .get(current)
-                    .and_then(|b| b.parent.as_deref());
+                cursor = by_name.get(current).and_then(|b| b.parent.as_deref());
             }
 
             for (i, cube) in bone.cubes.iter().enumerate() {
