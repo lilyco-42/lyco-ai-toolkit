@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/lyco-cli",
     "crates/lyco-mc-skin",
+    "crates/lyco-audio",
     "crates/lyco-bsm",
     "crates/lyco-bundle",
     "crates/lyco-lyrics",

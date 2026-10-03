@@ -13,6 +13,7 @@
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use lyco_audio::{AudioBackend, BgmRequest, CommandBackend, StubBackend};
 use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
@@ -46,13 +47,19 @@ enum Cmd {
         #[command(subcommand)]
         cmd: BsmCmd,
     },
-    /// Generate background music (F6, via ACE-Step)
+    /// Generate background music (F6)
     Bgm {
         /// Mood / style description
         prompt: String,
         /// Duration in seconds
         #[arg(long, default_value_t = 60)]
         duration: u32,
+        /// Output WAV path
+        #[arg(long, short, default_value = "out/bgm.wav")]
+        out: String,
+        /// 'stub' for the offline placeholder, or a generator command line
+        #[arg(long, default_value = "stub")]
+        backend: String,
     },
     /// Generate lyrics with verse/chorus/bridge structure (F8)
     Lyrics {
@@ -150,6 +157,12 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Skin { cmd } => run_skin(cmd),
         Cmd::Bsm { cmd } => run_bsm(cmd),
+        Cmd::Bgm {
+            prompt,
+            duration,
+            out,
+            backend,
+        } => run_bgm(prompt, duration, out, backend),
         other => fail_fast(&other),
     }
 }
@@ -408,6 +421,42 @@ fn geometry_report_json(file: &GeometryFile, problems: &[Problem]) -> String {
         "problems": issues,
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn run_bgm(prompt: String, duration: u32, out: String, backend_spec: String) -> Result<()> {
+    if duration == 0 {
+        bail!("--duration must be at least 1 second");
+    }
+    let backend = build_backend(&backend_spec)?;
+    if backend.name() == "stub" {
+        eprintln!("warning: --backend stub synthesises a placeholder tone, not music.");
+        eprintln!("         Point --backend at a real generator to produce actual BGM.");
+    }
+    let request = BgmRequest::new(prompt, duration, out);
+    let result = backend.generate(&request)?;
+    println!("wrote {}", result.path.display());
+    println!("backend  : {}", result.backend);
+    println!("duration : {:.2}s", result.duration_secs);
+    println!("bytes    : {}", result.bytes);
+    Ok(())
+}
+
+/// Resolve a `--backend` value into a generator.
+///
+/// `stub` selects the offline placeholder. Anything else is treated as a
+/// command line, so a real engine is wired in without this crate needing to
+/// know its arguments.
+fn build_backend(spec: &str) -> Result<Box<dyn AudioBackend>> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        bail!("--backend must not be empty");
+    }
+    if trimmed.eq_ignore_ascii_case("stub") {
+        return Ok(Box::new(StubBackend));
+    }
+    let program: Vec<String> = trimmed.split_whitespace().map(str::to_string).collect();
+    let backend = CommandBackend::new(trimmed.to_string(), program)?;
+    Ok(Box::new(backend))
 }
 
 fn arm_label(arm: Option<ArmModel>) -> &'static str {

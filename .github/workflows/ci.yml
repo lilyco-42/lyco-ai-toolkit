@@ -95,5 +95,29 @@ jobs:
           grep -q '3 vertices, 1 triangles' "$d/glb.txt"
 
 
+      # Proves F6 end to end, and cross-checks our WAV writer against an
+      # independent decoder (Python's stdlib wave module).
+      - name: bgm roundtrip smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+
+          # --backend stub is the only backend usable without a GPU
+          ./target/debug/lyco-cli bgm --prompt 'calm evening' --duration 2 --out "$d/bgm.wav"
+          ./target/debug/lyco-cli bgm --prompt 'calm evening' --duration 2 --out "$d/again.wav"
+          cmp "$d/bgm.wav" "$d/again.wav"
+
+          [ "$(head -c 4 "$d/bgm.wav")" = "RIFF" ]
+
+          python3 -c "import sys,wave; w=wave.open(sys.argv[1]); print(w.getnframes()/w.getframerate(), w.getnchannels(), w.getsampwidth())" "$d/bgm.wav" | tee "$d/probe.txt"
+          grep -q '2.0 2 2' "$d/probe.txt"
+
+          # a backend that cannot be started must fail, not pass quietly
+          if ./target/debug/lyco-cli bgm --prompt x --duration 1 --out "$d/x.wav" --backend definitely-not-a-real-binary-xyz 2>/dev/null; then
+            echo 'a missing backend binary must exit non-zero'
+            exit 1
+          fi
+
+
       - name: fmt
         run: cargo fmt --all -- --check

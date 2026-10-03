@@ -10,4 +10,5 @@ anyhow = { workspace = true }
 serde_json = { workspace = true }
 lyco-mc-skin = { path = "../lyco-mc-skin" }
 lyco-bsm = { path = "../lyco-bsm" }
+lyco-audio = { path = "../lyco-audio" }
 lyco-bundle = { path = "../lyco-bundle" }
