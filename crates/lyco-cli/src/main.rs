@@ -136,7 +136,12 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
             let skin = Skin::template(arm);
             skin.save(&out)?;
             let rep = skin.validate();
-            println!("wrote {out} ({}x{}, arm={})", skin.width(), skin.height(), arm.name());
+            println!(
+                "wrote {out} ({}x{}, arm={})",
+                skin.width(),
+                skin.height(),
+                arm.name()
+            );
             println!("opaque pixels : {}", rep.opaque_pixels);
             println!("distinct color: {}", rep.distinct_colors);
             if !rep.ok() {
@@ -193,7 +198,10 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
             rebuilt.save(&out)?;
             let after = distinct_opaque_colors(rebuilt.pixels());
             println!("wrote {out}");
-            println!("colors    : {before} -> {after} ({} in palette)", palette.len());
+            println!(
+                "colors    : {before} -> {after} ({} in palette)",
+                palette.len()
+            );
             println!("palette   : {}", palette.as_hex().join(" "));
             Ok(())
         }
@@ -221,7 +229,12 @@ fn print_report(rep: &Report) {
     let verdict = if rep.ok() { "valid" } else { "INVALID" };
     println!("{}: {}x{}", verdict, rep.width, rep.height);
     for issue in &rep.issues {
-        println!("  [{}] {}: {}", issue.severity.name(), issue.code, issue.message);
+        println!(
+            "  [{}] {}: {}",
+            issue.severity.name(),
+            issue.code,
+            issue.message
+        );
     }
 }
 
