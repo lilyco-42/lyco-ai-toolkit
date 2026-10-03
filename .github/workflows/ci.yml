@@ -48,11 +48,13 @@ jobs:
           ./target/debug/lyco-cli skin info "$d/skin.png"
 
           # classic template must be detected as classic
-          ./target/debug/lyco-cli skin info "$d/skin.png" | grep -q 'classic'
+          ./target/debug/lyco-cli skin info "$d/skin.png" > "$d/info.txt"
+          grep -q 'classic' "$d/info.txt"
 
           # slim template must be detected as slim
           ./target/debug/lyco-cli skin template --out "$d/slim.png" --arm slim
-          ./target/debug/lyco-cli skin info "$d/slim.png" | grep -q 'slim'
+          ./target/debug/lyco-cli skin info "$d/slim.png" > "$d/slim-info.txt"
+          grep -q 'slim' "$d/slim-info.txt"
 
           # quantization must shrink the palette and stay structurally valid
           ./target/debug/lyco-cli skin quantize "$d/skin.png" --out "$d/q.png" --colors 6

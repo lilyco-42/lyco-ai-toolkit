@@ -12,3 +12,7 @@ lyco-mc-skin = { path = "../lyco-mc-skin" }
 lyco-bsm = { path = "../lyco-bsm" }
 lyco-audio = { path = "../lyco-audio" }
 lyco-bundle = { path = "../lyco-bundle" }
+
+# Only needed to restore the default SIGPIPE behaviour on Unix.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

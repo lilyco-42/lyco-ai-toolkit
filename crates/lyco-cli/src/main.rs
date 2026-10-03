@@ -152,7 +152,25 @@ enum BsmCmd {
     },
 }
 
+/// Restore the default SIGPIPE handler on Unix.
+///
+/// Rust ignores SIGPIPE, so when stdout is closed early - piping into `head`
+/// or `grep -q` - the next `println!` fails and panics with "Broken pipe".
+/// Conventional Unix tools are simply terminated by the signal instead.
+#[cfg(unix)]
+fn restore_sigpipe() {
+    // SAFETY: both arguments are libc constants and `signal` is the portable
+    // way to install a handler. No Rust state is read or written.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn restore_sigpipe() {}
+
 fn main() -> Result<()> {
+    restore_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Skin { cmd } => run_skin(cmd),
