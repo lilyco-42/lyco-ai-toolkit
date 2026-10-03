@@ -155,7 +155,13 @@ impl Geometry {
                 message: format!("identifier '{id}' must start with 'geometry.'"),
             });
         }
-        if !(self.description.texture_width > 0.0) || !(self.description.texture_height > 0.0) {
+        let (tw, th) = (
+            self.description.texture_width,
+            self.description.texture_height,
+        );
+        // Spelling out is_finite keeps NaN reported as invalid, which is what
+        // a negated comparison happened to do but far less obviously.
+        if !tw.is_finite() || !th.is_finite() || tw <= 0.0 || th <= 0.0 {
             problems.push(Problem {
                 code: "bad-texture-size",
                 message: format!(
