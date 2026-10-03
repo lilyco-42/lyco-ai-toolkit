@@ -192,7 +192,7 @@ impl Glb {
             // Chunk data is padded to a 4-byte boundary; the padding is
             // included in chunkLength, so this normally lands already aligned.
             offset = end;
-            while offset < declared && offset % 4 != 0 {
+            while offset < declared && !offset.is_multiple_of(4) {
                 offset += 1;
             }
         }
@@ -322,11 +322,11 @@ mod tests {
     /// Build a GLB from a JSON document and a binary payload.
     fn build(json: &str, bin: &[u8]) -> Vec<u8> {
         let mut json_bytes = json.as_bytes().to_vec();
-        while json_bytes.len() % 4 != 0 {
+        while !json_bytes.len().is_multiple_of(4) {
             json_bytes.push(b' ');
         }
         let mut bin_bytes = bin.to_vec();
-        while bin_bytes.len() % 4 != 0 {
+        while !bin_bytes.len().is_multiple_of(4) {
             bin_bytes.push(0);
         }
 
