@@ -35,7 +35,11 @@ pub struct BgmRequest {
 
 impl BgmRequest {
     /// A request with the defaults, writing to `out_path`.
-    pub fn new(prompt: impl Into<String>, duration_secs: u32, out_path: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        prompt: impl Into<String>,
+        duration_secs: u32,
+        out_path: impl Into<PathBuf>,
+    ) -> Self {
         BgmRequest {
             prompt: prompt.into(),
             duration_secs,
@@ -329,7 +333,15 @@ mod tests {
     fn command_backend_accepts_a_real_generator() {
         use std::io::Write;
         let script = tmp("fake-generator.sh");
-        let body = "#!/bin/sh\nwhile [ $# -gt 0 ]; do case $1 in --out) out=$2; shift 2;; *) shift;; esac; done\nprintf 'RIFF' > \"$out\"\n";
+        let body = [
+            "#!/bin/sh",
+            "while [ $# -gt 0 ]; do",
+            "  case $1 in --out) out=$2; shift 2;; *) shift;; esac",
+            "done",
+            "printf 'RIFF' > \"$out\"",
+            "",
+        ]
+        .join("\n");
         let mut f = std::fs::File::create(&script).expect("script");
         f.write_all(body.as_bytes()).expect("write");
         drop(f);
