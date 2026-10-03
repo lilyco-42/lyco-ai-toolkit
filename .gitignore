@@ -29,3 +29,7 @@ _RESEARCH/.*.md
 
 # Local git metadata
 .idea/
+
+# Local CI log dumps
+.ci.log
+*.log

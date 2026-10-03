@@ -54,7 +54,11 @@ impl Report {
     }
 
     fn push(&mut self, severity: Severity, code: &'static str, message: String) {
-        self.issues.push(Issue { severity, code, message });
+        self.issues.push(Issue {
+            severity,
+            code,
+            message,
+        });
     }
 }
 
@@ -79,11 +83,16 @@ impl Skin {
                 expected
             );
         }
-        let pixels = bytes
-            .chunks_exact(4)
-            .map(|c| [c[0], c[1], c[2], c[3]])
-            .collect();
-        Ok(Skin { width, height, pixels })
+        // as_chunks is the stable, const-generic form clippy prefers over
+        // chunks_exact with a literal chunk size; the length check above
+        // already guarantees there is no remainder.
+        let (chunks, _) = bytes.as_chunks::<4>();
+        let pixels: Vec<[u8; 4]> = chunks.to_vec();
+        Ok(Skin {
+            width,
+            height,
+            pixels,
+        })
     }
 
     pub fn width(&self) -> u32 {
@@ -188,8 +197,8 @@ impl Skin {
                     Face::Back => -6,
                     Face::Bottom => -24,
                 };
-                for ch in 0..3 {
-                    c[ch] = (c[ch] as i16 + k).clamp(0, 255) as u8;
+                for ch in c.iter_mut().take(3) {
+                    *ch = (*ch as i16 + k).clamp(0, 255) as u8;
                 }
                 s.fill_face(*part, Layer::Base, face, arm, c);
             }
@@ -282,7 +291,13 @@ impl Skin {
         let checked: Vec<(Part, Layer, format::BoxUv)> = if legacy {
             [Part::Head, Part::Body, Part::RightArm, Part::RightLeg]
                 .iter()
-                .map(|p| (*p, Layer::Base, format::part_box(*p, Layer::Base, ArmModel::Classic)))
+                .map(|p| {
+                    (
+                        *p,
+                        Layer::Base,
+                        format::part_box(*p, Layer::Base, ArmModel::Classic),
+                    )
+                })
                 .collect()
         } else {
             let mut v = Vec::new();
@@ -388,11 +403,20 @@ mod tests {
     #[test]
     fn template_leaves_overlay_and_unused_regions_empty() {
         let s = Skin::template(ArmModel::Classic);
-        assert!(s.rect_is_transparent(Rect::new(56, 16, 8, 32)), "unused region");
+        assert!(
+            s.rect_is_transparent(Rect::new(56, 16, 8, 32)),
+            "unused region"
+        );
         // Overlay head lives at (32,0)-(64,16).
-        assert!(s.rect_is_transparent(Rect::new(32, 0, 32, 16)), "head overlay");
+        assert!(
+            s.rect_is_transparent(Rect::new(32, 0, 32, 16)),
+            "head overlay"
+        );
         // Overlay body lives at (16,32)-(40,48).
-        assert!(s.rect_is_transparent(Rect::new(16, 32, 24, 16)), "body overlay");
+        assert!(
+            s.rect_is_transparent(Rect::new(16, 32, 24, 16)),
+            "body overlay"
+        );
     }
 
     #[test]
@@ -491,7 +515,10 @@ mod tests {
         let slim_right =
             format::part_box(Part::RightArm, Layer::Base, ArmModel::Slim).face(Face::Right);
         let last_classic_column = classic_front.right() - 1;
-        assert_eq!(last_classic_column, slim_right.x, "faces are expected to abut");
+        assert_eq!(
+            last_classic_column, slim_right.x,
+            "faces are expected to abut"
+        );
 
         let slim = Skin::template(ArmModel::Slim);
         let probe = Rect::new(last_classic_column, classic_front.y, 1, classic_front.h);

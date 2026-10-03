@@ -238,7 +238,11 @@ mod tests {
     fn is_deterministic_across_runs() {
         let mut pixels = Vec::new();
         for i in 0..1000u32 {
-            pixels.push(px([(i % 251) as u8, ((i * 7) % 241) as u8, ((i * 13) % 233) as u8]));
+            pixels.push(px([
+                (i % 251) as u8,
+                ((i * 7) % 241) as u8,
+                ((i * 13) % 233) as u8,
+            ]));
         }
         let a = median_cut(&pixels, 8);
         let b = median_cut(&pixels, 8);
@@ -249,7 +253,11 @@ mod tests {
     fn is_order_independent() {
         let mut a = Vec::new();
         for i in 0..200u32 {
-            a.push(px([(i % 97) as u8, ((i * 3) % 89) as u8, ((i * 5) % 83) as u8]));
+            a.push(px([
+                (i % 97) as u8,
+                ((i * 3) % 89) as u8,
+                ((i * 5) % 83) as u8,
+            ]));
         }
         let mut b = a.clone();
         b.reverse();

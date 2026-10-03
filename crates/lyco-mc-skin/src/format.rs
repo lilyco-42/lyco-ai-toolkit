@@ -152,7 +152,10 @@ impl Rect {
 
     /// Half-open intersection test: rectangles that merely touch do not intersect.
     pub fn intersects(&self, other: &Rect) -> bool {
-        self.x < other.right() && other.x < self.right() && self.y < other.bottom() && other.y < self.bottom()
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -290,10 +293,7 @@ mod tests {
                 .collect();
             for i in 0..boxes.len() {
                 for j in (i + 1)..boxes.len() {
-                    assert!(
-                        !boxes[i].intersects(&boxes[j]),
-                        "base parts overlap"
-                    );
+                    assert!(!boxes[i].intersects(&boxes[j]), "base parts overlap");
                 }
             }
         }

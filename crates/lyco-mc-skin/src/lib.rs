@@ -17,8 +17,7 @@ pub use format::{
     all_boxes, part_box, ArmModel, BoxUv, Face, Layer, Part, Rect, SKIN_HEIGHT, SKIN_WIDTH,
 };
 pub use palette::{
-    apply as apply_palette, distinct_opaque_colors, median_cut, Palette, Rgb,
-    DEFAULT_PALETTE_SIZE,
+    apply as apply_palette, distinct_opaque_colors, median_cut, Palette, Rgb, DEFAULT_PALETTE_SIZE,
 };
 pub use skin::{Issue, Report, Severity, Skin};
 
@@ -62,7 +61,12 @@ mod integration_tests {
         let snapped = apply_palette(s.pixels(), &pal);
         let after = distinct_opaque_colors(&snapped);
         assert!(after <= DEFAULT_PALETTE_SIZE, "not reduced: {}", after);
-        assert!(after < before, "expected fewer colors: {} -> {}", before, after);
+        assert!(
+            after < before,
+            "expected fewer colors: {} -> {}",
+            before,
+            after
+        );
 
         // Quantization must not introduce transparency where art existed.
         let bytes: Vec<u8> = snapped.iter().flat_map(|p| p.iter().copied()).collect();
