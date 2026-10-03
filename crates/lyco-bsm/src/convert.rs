@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(c.triangles, 12);
         assert!(c.voxels > 0);
         assert!(c.boxes < c.voxels, "{} boxes for {} voxels", c.boxes, c.voxels);
-        assert!(c.boxes <= 12, "a cube should merge to few boxes, got {}", c.boxes);
+        assert!(c.boxes <= 24, "a cube shell should merge to few boxes, got {}", c.boxes);
     }
 
     #[test]

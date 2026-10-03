@@ -38,11 +38,80 @@ impl Default for VoxelConfig {
     }
 }
 
-/// Upper bound on barycentric steps per triangle edge.
+fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn scale(a: [f32; 3], k: f32) -> [f32; 3] {
+    [a[0] * k, a[1] * k, a[2] * k]
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn len(a: [f32; 3]) -> f32 {
+    dot(a, a).sqrt()
+}
+
+/// Shortest distance from a point to a triangle, corners and interior included.
 ///
-/// Without a cap, one enormous triangle in a decimated mesh would dominate the
-/// whole run: the sample loop is quadratic in the step count.
-const MAX_STEPS: u32 = 24;
+/// This is the test that decides voxel occupancy. An earlier version sampled
+/// barycentric points along each triangle, but that leaves holes whenever a
+/// triangle is larger than a voxel, and holes fragment box merging badly
+/// (a cube shell came out as 286 boxes instead of six). Measuring distance
+/// against the voxel centre is gap-free whatever the triangle size.
+fn point_triangle_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> f32 {
+    let ab = sub(b, a);
+    let ac = sub(c, a);
+    let ap = sub(p, a);
+    let d1 = dot(ab, ap);
+    let d2 = dot(ac, ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return len(ap);
+    }
+
+    let bp = sub(p, b);
+    let d3 = dot(ab, bp);
+    let d4 = dot(ac, bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return len(bp);
+    }
+
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return len(sub(p, add(a, scale(ab, v))));
+    }
+
+    let cp = sub(p, c);
+    let d5 = dot(ab, cp);
+    let d6 = dot(ac, cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return len(cp);
+    }
+
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return len(sub(p, add(a, scale(ac, w))));
+    }
+
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return len(sub(p, add(b, scale(sub(c, b), w))));
+    }
+
+    let denom = 1.0 / (va + vb + vc);
+    let v = vb * denom;
+    let w = vc * denom;
+    len(sub(p, add(a, add(scale(ab, v), scale(ac, w)))))
+}
 
 /// A dense occupancy grid in model space, plus a colour per voxel.
 ///
@@ -168,10 +237,6 @@ fn aabb(points: &[[f32; 3]]) -> Option<([f32; 3], [f32; 3])> {
     Some((min, max))
 }
 
-fn edge_len(a: [f32; 3], b: [f32; 3]) -> f32 {
-    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-}
 
 /// Mark the voxels a surface passes through.
 ///
@@ -199,29 +264,43 @@ pub fn voxelize_surface(triangles: &[Triangle], cfg: &VoxelConfig) -> Option<Gri
         ((extent[2] / voxel_size).ceil() as u32).max(1),
     ];
     let mut grid = Grid::new(dims, min, voxel_size);
+    // Half the voxel diagonal: a voxel is occupied when its centre is within
+    // this of the surface, which makes the shell watertight.
+    let radius = voxel_size * 0.5 * 3.0f32.sqrt();
 
     for tri in triangles {
-        let longest_edge = edge_len(tri.a, tri.b)
-            .max(edge_len(tri.b, tri.c))
-            .max(edge_len(tri.c, tri.a));
-        let steps = ((longest_edge / voxel_size).ceil() as u32).clamp(1, MAX_STEPS);
-        for i in 0..=steps {
-            for j in 0..=(steps - i) {
-                let u = i as f32 / steps as f32;
-                let v = j as f32 / steps as f32;
-                let w = 1.0 - u - v;
-                if w < 0.0 {
-                    continue;
+        let tri_min = [
+            tri.a[0].min(tri.b[0]).min(tri.c[0]),
+            tri.a[1].min(tri.b[1]).min(tri.c[1]),
+            tri.a[2].min(tri.b[2]).min(tri.c[2]),
+        ];
+        let tri_max = [
+            tri.a[0].max(tri.b[0]).max(tri.c[0]),
+            tri.a[1].max(tri.b[1]).max(tri.c[1]),
+            tri.a[2].max(tri.b[2]).max(tri.c[2]),
+        ];
+
+        let mut lo = [0i64; 3];
+        let mut hi = [0i64; 3];
+        for axis in 0..3 {
+            let from = (tri_min[axis] - radius - min[axis]) / voxel_size;
+            let to = (tri_max[axis] + radius - min[axis]) / voxel_size;
+            lo[axis] = from.floor().max(0.0) as i64;
+            hi[axis] = (to.ceil() as i64).min(dims[axis] as i64 - 1);
+        }
+
+        for gz in lo[2]..=hi[2] {
+            for gy in lo[1]..=hi[1] {
+                for gx in lo[0]..=hi[0] {
+                    let centre = [
+                        min[0] + (gx as f32 + 0.5) * voxel_size,
+                        min[1] + (gy as f32 + 0.5) * voxel_size,
+                        min[2] + (gz as f32 + 0.5) * voxel_size,
+                    ];
+                    if point_triangle_distance(centre, tri.a, tri.b, tri.c) <= radius {
+                        grid.mark(gx, gy, gz, tri.color);
+                    }
                 }
-                let p = [
-                    tri.a[0] * w + tri.b[0] * u + tri.c[0] * v,
-                    tri.a[1] * w + tri.b[1] * u + tri.c[1] * v,
-                    tri.a[2] * w + tri.b[2] * u + tri.c[2] * v,
-                ];
-                let gx = ((p[0] - min[0]) / voxel_size).floor() as i64;
-                let gy = ((p[1] - min[1]) / voxel_size).floor() as i64;
-                let gz = ((p[2] - min[2]) / voxel_size).floor() as i64;
-                grid.mark(gx, gy, gz, tri.color);
             }
         }
     }
@@ -464,6 +543,40 @@ mod tests {
         // Every occupied voxel should be near the surface, never deep inside.
         let boxes = merge_boxes(&grid);
         assert!(boxes.len() < grid.occupied_count(), "merging should help");
+    }
+
+    #[test]
+    fn the_shell_is_watertight_with_no_gaps() {
+        let tris = cube_triangles(0.0, 12.0);
+        let grid = voxelize_surface(&tris, &VoxelConfig { resolution: 12 }).unwrap();
+        let [dx, dy, dz] = grid.dims();
+        let mid_z = dz / 2;
+        let mid_x = dx / 2;
+        let mid_y = dy / 2;
+        for x in 0..dx {
+            assert!(grid.is_occupied(x, 0, mid_z), "hole at x={x} on a Y face");
+            assert!(grid.is_occupied(x, dy - 1, mid_z), "hole at x={x} on a Y face");
+        }
+        for z in 0..dz {
+            assert!(grid.is_occupied(0, mid_y, z), "hole at z={z} on an X face");
+            assert!(grid.is_occupied(dx - 1, mid_y, z), "hole at z={z} on an X face");
+        }
+        for y in 0..dy {
+            assert!(grid.is_occupied(mid_x, y, 0), "hole at y={y} on a Z face");
+            assert!(grid.is_occupied(mid_x, y, dz - 1), "hole at y={y} on a Z face");
+        }
+    }
+
+    #[test]
+    fn a_cube_shell_merges_into_a_handful_of_boxes() {
+        let tris = cube_triangles(0.0, 12.0);
+        let grid = voxelize_surface(&tris, &VoxelConfig { resolution: 12 }).unwrap();
+        let boxes = merge_boxes(&grid);
+        assert!(
+            boxes.len() <= 12,
+            "a six-sided shell should be about six boxes, got {}",
+            boxes.len()
+        );
     }
 
     #[test]
