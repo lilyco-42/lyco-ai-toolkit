@@ -70,21 +70,43 @@
 - [ ] 接真实 ACE-Step —— **需要 GPU 主机**（8000 显存，4090 上 34x 实时）
 - [ ] 转 mp3 —— 需要 ffmpeg/lame，尚未接入
 
-## S4（第 6 天）F7 图像 + F8 歌词单点
-- [ ] lyco-bundle::portrait()：ComfyUI SDXL 出 512x512 portrait
-- [ ] lyco-lyrics::generate()：本地 LLM -> verse/chorus/bridge 结构
-- [ ] **验收**：lyco-cli lyrics --prompt '...' 输出分段歌词 + 时间标注（无）
+## S4 — F7 图像 ✅ / F8 歌词 ⬜
 
-## S5（第 7 天）bundle 整合
-- [ ] lyco-cli bundle --prompt '...' 串行调用 S1-S4 4 个原子能力
-- [ ] **验收标准（00-requirement.md 的 #1 acceptance）：**
-    1. 命令返回 0
-    2. 输出目录：skin.png + model.bsm + bgm.mp3 + portrait.png
-    3. skin PNG 是 64x64 且 mcmeta 校验通过
-    4. BSM 在 BlockBench 导入成功
-    5. BGM 时长 >= 30s
-    6. portrait 分辨率 >= 512x512
-- [ ] 输出 bundle manifest.json 列出所有文件 + 生成参数
+### F7 图像 ✅ **离线部分已完成**
+- [x] `lyco-image::render` — 纯函数程序化立绘（渐变 + 肩 + 头 + 发型 + 眼），
+      由 prompt 的 FNV-1a 决定配色 ⇒ 确定性、可逐像素断言
+- [x] `lyco-image::backend` — `ImageBackend` trait + `StubBackend` + `CommandBackend`
+- [x] **验收**：产出被 `verify_image()` 解回，校验尺寸 **且拒绝纯色画布**
+      —— 测试 16 passed
+- [ ] 接 ComfyUI —— **需要 GPU 主机**（约 12GB 显存）
+
+### F8 歌词 ⬜ 未开始
+- [ ] `lyco-lyrics`：LLM 调用 + verse/chorus/bridge 结构约束
+- [ ] **验收**：`lyco-cli lyrics --prompt '...'` 输出分段歌词
+
+## S5 — bundle 整合 ✅ **已完成**
+
+- [x] `lyco-bundle::build()` — 串起四个能力域，是唯一依赖全部四个 crate 的地方
+      （依赖图因此是一棵树，不是一张网）
+- [x] **每个产物写完都要验**：皮肤与几何重跑各自校验器；音频与图像解码回来核对尺寸/时长/非静音/非纯色。
+      **四项全部成立才返回 bundle**
+- [x] `lyco-cli bundle --prompt '...' --out DIR [--arm] [--bgm-duration] [--bgm-backend] [--image-backend]`
+- [x] `manifest.json` 自描述：每个产物记录 kind / file / backend / bytes / **placeholder 标记**
+
+### 验收标准对照（00-requirement.md）
+| # | 要求 | 状态 |
+|---|---|---|
+| 1 | 命令返回 0 | ✅ |
+| 2 | skin.png + model + bgm + portrait.png | ✅ （model 为 `.geo.json`，mp3 待 ffmpeg） |
+| 3 | skin 是合法 64x64 | ✅ 就地重校验 + CI 直读 PNG 头核对 |
+| 4 | 模型能被 MC 工具导入 | ⚠️ **未验证** —— 需人工在 Blockbench 里导入 |
+| 5 | BGM 时长 >= 30s | ✅ 默认 30s，解码回读校验 |
+| 6 | portrait >= 512x512 | ✅ 默认 512×512，CI 直读 PNG 头核对 |
+
+### 诚实性设计
+manifest 对 stub 产出的产物标 `placeholder: true`，并在 `notes` 里点名。
+**一个 bundle 永远不会看起来像四次真实生成。**
+CI 断言 `('model', False)` 与 `('portrait', True)` 同时成立。
 
 ## 跳过 / 延后到 v0.2+
 - [ ] F9 MCP server（S5 验证通过之前不投入 - 过早抽象风险）
@@ -121,9 +143,11 @@
 | 能力 | crate | 测试 | CI 额外验证 |
 |---|---|---|---|
 | F1 MC skin | lyco-mc-skin | 35 | skin 闭环 + 垃圾输入必须失败 |
-| F2/F3 模型 | lyco-bsm | 30 | humanoid 闭环 + 用 Python 造真实 GLB 喂给 glb-info |
-| F6 BGM | lyco-audio | 20 | bgm 闭环 + **Python `wave` 独立解码**校验写出器 |
-| **合计** | | **85** | clippy -D warnings + fmt + build + 3 组冒烟测试 |
+| F2/F3 模型 | lyco-bsm | 30 | humanoid 闭环 + Python 造真实 GLB 喂给 glb-info |
+| F6 BGM | lyco-audio | 21 | **Python `wave` 独立解码**校验写出器 |
+| F7 图像 | lyco-image | 16 | 纯色画布必须被拒绝 |
+| S5 bundle | lyco-bundle | 6 | 四产物齐备 + 直读 PNG 头核对尺寸 |
+| **合计** | | **108** | clippy -D warnings + fmt + build + 4 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
 因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
