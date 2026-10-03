@@ -13,7 +13,7 @@
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use lyco_audio::{backend_from_spec, AudioBackend, BgmRequest};
+use lyco_audio::{backend_from_spec, BgmRequest};
 use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
 use lyco_bundle::{Artifact, BundleRequest};
 use lyco_mc_skin::{
