@@ -61,7 +61,11 @@ fn lerp(a: u8, b: u8, t: f32) -> u8 {
 }
 
 fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
-    [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+    [
+        lerp(a[0], b[0], t),
+        lerp(a[1], b[1], t),
+        lerp(a[2], b[2], t),
+    ]
 }
 
 /// Render a deterministic placeholder portrait as row-major RGBA.

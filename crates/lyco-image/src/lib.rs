@@ -8,8 +8,8 @@ pub mod backend;
 pub mod render;
 
 pub use backend::{
-    backend_from_spec, verify_image, CommandBackend, ImageBackend, ImageResult,
-    PortraitRequest, StubBackend, DEFAULT_HEIGHT, DEFAULT_WIDTH,
+    backend_from_spec, verify_image, CommandBackend, ImageBackend, ImageResult, PortraitRequest,
+    StubBackend, DEFAULT_HEIGHT, DEFAULT_WIDTH,
 };
 pub use render::placeholder_portrait;
 

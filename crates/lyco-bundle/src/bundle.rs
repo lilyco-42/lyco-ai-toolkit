@@ -222,7 +222,10 @@ mod tests {
         assert!(find("skin").placeholder);
         assert!(find("bgm").placeholder);
         assert!(find("portrait").placeholder);
-        assert!(!find("model").placeholder, "the humanoid model is real geometry");
+        assert!(
+            !find("model").placeholder,
+            "the humanoid model is real geometry"
+        );
         assert_eq!(manifest.notes.len(), 3);
     }
 

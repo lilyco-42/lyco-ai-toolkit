@@ -142,7 +142,10 @@ impl ImageBackend for CommandBackend {
     }
 
     fn generate(&self, req: &PortraitRequest) -> Result<ImageResult> {
-        let (exe, rest) = self.program.split_first().context("program list is empty")?;
+        let (exe, rest) = self
+            .program
+            .split_first()
+            .context("program list is empty")?;
         let status = std::process::Command::new(exe)
             .args(rest)
             .arg("--prompt")
@@ -232,8 +235,7 @@ mod tests {
 
     #[test]
     fn stub_honours_a_custom_size() {
-        let req =
-            PortraitRequest::new("small", tmp("small.png")).with_size(96, 128);
+        let req = PortraitRequest::new("small", tmp("small.png")).with_size(96, 128);
         let result = StubBackend.generate(&req).expect("generate");
         assert_eq!(result.width, 96);
         assert_eq!(result.height, 128);

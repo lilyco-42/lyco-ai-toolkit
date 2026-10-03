@@ -520,7 +520,6 @@ fn run_bgm(prompt: String, duration: u32, out: String, backend_spec: String) -> 
     Ok(())
 }
 
-
 fn arm_label(arm: Option<ArmModel>) -> &'static str {
     match arm {
         Some(ArmModel::Classic) => "classic",
