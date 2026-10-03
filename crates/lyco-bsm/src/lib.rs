@@ -15,14 +15,17 @@
 //!
 //!   * [`bedrock`] - the Bedrock geometry data model, writer and validator
 //!   * [`glb`] - the GLB (binary glTF 2.0) reader that feeds conversion
+//!   * [`humanoid`] - the standard player model built from the skin layout (F2)
 
 pub mod bedrock;
 pub mod glb;
+pub mod humanoid;
 
 pub use bedrock::{
     Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Problem, Uv, FACES, FORMAT_VERSION,
 };
 pub use glb::{Glb, Gltf};
+pub use humanoid::{player_file, player_geometry, HAT_INFLATE, OVERLAY_INFLATE, PLAYER_HEIGHT};
 
 #[cfg(test)]
 mod tests {

@@ -8,5 +8,6 @@ license.workspace = true
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-image = { workspace = true }
-tokio = { workspace = true }
+# The player model's UV anchors are the Minecraft skin layout, so the skin
+# crate is the single source of truth for them rather than a second copy.
+lyco-mc-skin = { path = "../lyco-mc-skin" }
