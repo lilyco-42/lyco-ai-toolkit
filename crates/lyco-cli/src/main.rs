@@ -50,6 +50,7 @@ enum Cmd {
     /// Generate background music (F6)
     Bgm {
         /// Mood / style description
+        #[arg(long, short)]
         prompt: String,
         /// Duration in seconds
         #[arg(long, default_value_t = 60)]
