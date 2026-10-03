@@ -70,7 +70,7 @@
 - [ ] 接真实 ACE-Step —— **需要 GPU 主机**（8000 显存，4090 上 34x 实时）
 - [ ] 转 mp3 —— 需要 ffmpeg/lame，尚未接入
 
-## S4 — F7 图像 ✅ / F8 歌词 ⬜
+## S4 — F7 图像 ✅ / F8 歌词 ✅
 
 ### F7 图像 ✅ **离线部分已完成**
 - [x] `lyco-image::render` — 纯函数程序化立绘（渐变 + 肩 + 头 + 发型 + 眼），
@@ -78,11 +78,20 @@
 - [x] `lyco-image::backend` — `ImageBackend` trait + `StubBackend` + `CommandBackend`
 - [x] **验收**：产出被 `verify_image()` 解回，校验尺寸 **且拒绝纯色画布**
       —— 测试 16 passed
+- [x] `lyco-cli portrait` 单点命令
 - [ ] 接 ComfyUI —— **需要 GPU 主机**（约 12GB 显存）
 
-### F8 歌词 ⬜ 未开始
-- [ ] `lyco-lyrics`：LLM 调用 + verse/chorus/bridge 结构约束
-- [ ] **验收**：`lyco-cli lyrics --prompt '...'` 输出分段歌词
+### F8 歌词 ✅ **已完成**
+- [x] `lyco-lyrics::lyrics` — 文档模型 + 解析器 + **结构化校验器**
+      采用 Suno/ACE-Step 通行的 `[Verse]` 标记惯例 ⇒ 产物可直接喂给 BGM 后端
+      校验覆盖：无 section、空 section、缺 Chorus、未知标记、连续重复 section、
+      超长行、行首尾空白
+- [x] **未知标记原样保留** —— 解析失败的标记会以 `[Other x]` 形式写回，
+      这是有损的；已修正为原样回写，并加回归测试钉死往返无损
+- [x] `lyco-lyrics::backend` — `LyricsBackend` trait + `StubBackend` + `CommandBackend`
+- [x] **验收**：产出的歌词被**重新解析并校验**；一个退出码 0 但只吐散文的写入器会被拒
+      —— 测试 20 passed（含 1 集成测试）
+- [ ] 接真实 LLM（本地 lilyco_chat / 在线网关）—— 配置一个 `--backend` 命令行即可
 
 ## S5 — bundle 整合 ✅ **已完成**
 
@@ -146,8 +155,24 @@ CI 断言 `('model', False)` 与 `('portrait', True)` 同时成立。
 | F2/F3 模型 | lyco-bsm | 30 | humanoid 闭环 + Python 造真实 GLB 喂给 glb-info |
 | F6 BGM | lyco-audio | 21 | **Python `wave` 独立解码**校验写出器 |
 | F7 图像 | lyco-image | 16 | 纯色画布必须被拒绝 |
-| S5 bundle | lyco-bundle | 6 | 四产物齐备 + 直读 PNG 头核对尺寸 |
-| **合计** | | **108** | clippy -D warnings + fmt + build + 4 组冒烟测试 |
+| F8 歌词 | lyco-lyrics | 20 | 标记结构断言 + 只吐散文的写入器必须被拒 |
+| S5 bundle | lyco-bundle | 6 | 五产物齐备 + 直读 PNG 头核对尺寸 |
+| **合计** | | **128** | clippy -D warnings + fmt + build + 5 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
 因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
+## CLI 面现状（2026-07-21）
+
+**所有子命令都已实现，脚手架守卫（`fail_fast`）已删除。**
+
+```
+lyco-cli bundle    # skin + model + bgm + portrait + lyrics + manifest
+lyco-cli skin      # template | validate | info | quantize | generate
+lyco-cli bsm       # humanoid | validate | info | glb-info
+lyco-cli bgm       # background music
+lyco-cli lyrics    # sectioned lyric sheets
+lyco-cli portrait  # a single portrait
+```
+
+需要模型的（扩散 / 音频引擎 / LLM）都通过 `--backend` 指向子进程；
+内置 `stub` 后端在每个界面都被标注为 placeholder。
