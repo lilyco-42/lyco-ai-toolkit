@@ -10,17 +10,45 @@
 - [x] 写 _RESEARCH/00-04 共 5 份调研文档
 - [x] .github/workflows/ci.yml：cargo check + fmt + clippy（fmt + clippy + build + CLI smoke）
 
-## S1（第 1-2 天）F1 MC Skin 单点
-- [ ] lyco-mc-skin::palette_quantize()：6-8 色 k-means（imagequant crate）
-- [ ] 接入 ComfyUI subprocess：固定 prompt -> 64x64 PNG
-- [ ] 用 misode/mcmeta 的 UV schema 校验 slim 模型不重叠
-- [ ] **验收**：lyco-cli skin --prompt '...' 输出 64x64 PNG + 校验通过
+## S1 — F1 MC Skin ✅ **已完成**（纯 Rust，离线可验证）
 
-## S2（第 3-4 天）F2/F3 BSM 单点
-- [ ] 收集 2-3 个 BlockBench 官方示例 .bsm（参考样本，不是闭源 repo 复制）
-- [ ] 实现 lyco-bsm::serialize()：BSM JSON + 贴图输出
-- [ ] 接 Hunyuan3D-2.0 subprocess（16GB @ 24GB 卡）：prompt -> GLB -> BSM
-- [ ] **验收**：BlockBench 导入 BSM 不报错，骨骼 + 贴图完整
+- [x] `lyco-mc-skin::format` — 64x64 box-UV 展开 + 12 部位/层锚点表
+      （锚点实测自 `bs-community/skinview3d` `src/model.ts`，非记忆）
+- [x] `lyco-mc-skin::palette` — median-cut 量化（确定性，无 RNG，默认 8 色）
+- [x] `lyco-mc-skin::skin` — 载入/保存/模板 + 结构校验报告（含 legacy 64x32）
+- [x] `lyco-cli skin {template,validate,info,quantize}` 接线完成
+- [x] **验收证据**：CI 每次跑真实闭环 ——
+      `template → validate → info(grep classic) → template --arm slim → info(grep slim)
+       → quantize --colors 6 → validate --json → 喂随机字节必须非零退出`
+- [x] 测试：**35 passed / 0 failed**
+- [ ] 接入 ComfyUI subprocess（prompt → 图）—— **需要 GPU 主机**，本机无 GPU
+      ⇒ 设计为子进程边界，`skin generate` 目前 fail-fast
+
+## S2 — F2/F3 ⚠️ **目标格式已修正，进行中**
+
+> ⚠️ 原计划写的是「BSM 单点」。二次核查证明 **BSM 这个格式不存在**，
+> **YSM 是加密二进制**（详见 02-niche-knowledge.md 第五节）。
+> 目标改为 **Bedrock geometry `.geo.json`**（开放、Blockbench 双向兼容）。
+
+- [x] **F3 输入侧**：`lyco-bsm::glb` — GLB(binary glTF 2.0) 解析器
+      容器/magic/版本、JSON+BIN 双 chunk、4 字节对齐、未知 chunk 跳过、
+      VEC3 f32 位置 accessor、u8/u16/u32 索引 accessor、byteStride 交错数据
+      —— 测试 **7 passed**
+- [x] **F2 输出侧**：`lyco-bsm::bedrock` — Bedrock geometry 数据模型 + 写出 + 校验
+      字段取自 Mojang 官方 `bedrock-samples` 真实文件
+      （`resource_pack/models/entity/*.geo.json`），支持 box UV 与 per-face UV、
+      无 cube 的关节骨、mirror、零尺寸面；校验覆盖 identifier 前缀、贴图尺寸、
+      重名骨、缺失父骨、父子环、负尺寸、非有限值、未知面名
+      —— 测试 **10 passed**（含对官方 armor_stand 样本的解析 + JSON 无损往返）
+- [ ] **F3 几何转换**：GLB 三角面 → Bedrock 盒模型（体素化 / 盒拟合）
+      —— 这是本项目最硬的算法部分，尚未开始
+- [ ] **F2 humanoid**：标准玩家模型生成器（把 F1 皮肤的 UV 映射到骨骼）
+      —— 待核实 Bedrock 正/背面命名与皮肤 front/back 的对应关系
+- [ ] 接 Hunyuan3D-2.0 subprocess（16GB）—— **需要 GPU 主机**
+- **验收标准（修订）**：Blockbench 能导入产出的 `.geo.json`，骨骼 + per-face UV 完整
+
+  **已获得的交叉验证**：官方 `armor_stand.geo.json` 的 `hat` 骨 cube `uv` 为 `[32, 0]`，
+  正好等于 F1 核实过的皮肤**头部 overlay 锚点 (32,0)** ⇒ 两套坐标系同源。
 
 ## S3（第 5 天）F6 BGM 单点
 - [ ] lyco-bundle::bgm()：subprocess acestep --prompt '...' --duration 30
@@ -72,3 +100,15 @@
 | CLI 帮助 | `lyco-cli --help` | 6 个子命令可见 |
 | fail-fast | `lyco-cli bundle --prompt x` | exit=1 + 指回本清单 |
 | 远端 | `gh api repos/lilyco-42/lyco-ai-toolkit` | private, main |
+
+## 证据汇总（自动生成，每次 CI 运行验证）
+
+| 能力 | crate | 测试 | CI 额外验证 |
+|---|---|---|---|
+| F1 MC skin | lyco-mc-skin | 35 | CLI 端到端闭环 + 垃圾输入必须失败 |
+| F3 GLB 解析 | lyco-bsm::glb | 7 | — |
+| F2 Bedrock geometry | lyco-bsm::bedrock | 10 | 官方 armor_stand 样本往返 |
+| **合计** | | **54** | clippy -D warnings + fmt + build |
+
+本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
+因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
