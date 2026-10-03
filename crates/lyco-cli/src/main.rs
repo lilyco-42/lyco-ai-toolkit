@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use lyco_audio::{backend_from_spec, BgmRequest};
 use lyco_bsm::{
-    glb::Primitive, player_file, convert_glb, ConvertConfig, GeometryFile, Glb, Problem,
+    convert_glb, glb::Primitive, player_file, ConvertConfig, GeometryFile, Glb, Problem,
 };
 use lyco_bundle::{Artifact, BundleRequest};
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};

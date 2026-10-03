@@ -13,9 +13,7 @@ use std::collections::BTreeMap;
 
 use crate::bedrock::{Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Uv, FACES};
 use crate::glb::Glb;
-use crate::voxel::{
-    box_color, merge_boxes, voxelize_surface, Box3, Grid, Triangle, VoxelConfig,
-};
+use crate::voxel::{box_color, merge_boxes, voxelize_surface, Box3, Grid, Triangle, VoxelConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConvertConfig {
@@ -128,13 +126,19 @@ fn material_colors(glb: &Glb) -> Vec<[u8; 3]> {
     glb.gltf
         .materials
         .iter()
-        .map(|mat| match mat.pbr_metallic_roughness.as_ref().and_then(|p| p.base_color_factor) {
-            Some(f) => [
-                linear_to_srgb_u8(f[0]),
-                linear_to_srgb_u8(f[1]),
-                linear_to_srgb_u8(f[2]),
-            ],
-            None => [200, 200, 200],
+        .map(|mat| {
+            match mat
+                .pbr_metallic_roughness
+                .as_ref()
+                .and_then(|p| p.base_color_factor)
+            {
+                Some(f) => [
+                    linear_to_srgb_u8(f[0]),
+                    linear_to_srgb_u8(f[1]),
+                    linear_to_srgb_u8(f[2]),
+                ],
+                None => [200, 200, 200],
+            }
         })
         .collect()
 }
@@ -217,9 +221,11 @@ fn walk(
                             let a = chunk[0] as usize;
                             let b = chunk[1] as usize;
                             let c = chunk[2] as usize;
-                            if let (Some(pa), Some(pb), Some(pc)) =
-                                (world_points.get(a), world_points.get(b), world_points.get(c))
-                            {
+                            if let (Some(pa), Some(pb), Some(pc)) = (
+                                world_points.get(a),
+                                world_points.get(b),
+                                world_points.get(c),
+                            ) {
                                 out.push(Triangle {
                                     a: *pa,
                                     b: *pb,
@@ -299,7 +305,11 @@ fn cube_from_box(b: &Box3, grid: &Grid) -> Cube {
         b.min[1] as f32 * v,
         b.min[2] as f32 * v - half_z,
     ];
-    let size = [b.size[0] as f32 * v, b.size[1] as f32 * v, b.size[2] as f32 * v];
+    let size = [
+        b.size[0] as f32 * v,
+        b.size[1] as f32 * v,
+        b.size[2] as f32 * v,
+    ];
     // The caller replaces the uv with a per-face cell once it has picked one.
     Cube {
         origin,
@@ -411,11 +421,7 @@ mod tests {
     ];
 
     const INDICES: [u16; 36] = [
-        0, 1, 2, 0, 2, 3,
-        4, 6, 5, 4, 7, 6,
-        0, 4, 5, 0, 5, 1,
-        1, 5, 6, 1, 6, 2,
-        2, 6, 7, 2, 7, 3,
+        0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3,
         3, 7, 4, 3, 4, 0,
     ];
 
@@ -479,18 +485,27 @@ mod tests {
 
     #[test]
     fn converts_a_cube_into_a_usable_model() {
-        let c = convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default())
-            .expect("convert");
+        let c =
+            convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default()).expect("convert");
         assert_eq!(c.triangles, 12);
         assert!(c.voxels > 0);
-        assert!(c.boxes < c.voxels, "{} boxes for {} voxels", c.boxes, c.voxels);
-        assert!(c.boxes <= 24, "a cube shell should merge to few boxes, got {}", c.boxes);
+        assert!(
+            c.boxes < c.voxels,
+            "{} boxes for {} voxels",
+            c.boxes,
+            c.voxels
+        );
+        assert!(
+            c.boxes <= 24,
+            "a cube shell should merge to few boxes, got {}",
+            c.boxes
+        );
     }
 
     #[test]
     fn the_emitted_geometry_validates_and_matches_its_texture() {
-        let c = convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default())
-            .expect("convert");
+        let c =
+            convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default()).expect("convert");
         let problems = c.geometry.validate();
         assert!(problems.is_empty(), "{problems:?}");
         let g = &c.geometry.geometry[0];
@@ -500,8 +515,8 @@ mod tests {
 
     #[test]
     fn every_cube_cites_a_cell_inside_the_texture() {
-        let c = convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default())
-            .expect("convert");
+        let c =
+            convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default()).expect("convert");
         let side = c.texture.width() as f32;
         let cubes = &c.geometry.geometry[0].bones[0].cubes;
         assert!(!cubes.is_empty());
@@ -522,8 +537,8 @@ mod tests {
 
     #[test]
     fn the_model_stands_on_zero_and_is_centred() {
-        let c = convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default())
-            .expect("convert");
+        let c =
+            convert_glb(&cube_glb([0.0, 0.0, 0.0]), &ConvertConfig::default()).expect("convert");
         let cubes = &c.geometry.geometry[0].bones[0].cubes;
         let min_y = cubes.iter().map(|c| c.origin[1]).fold(f32::MAX, f32::min);
         assert_eq!(min_y, 0.0, "the model should stand on Y = 0");

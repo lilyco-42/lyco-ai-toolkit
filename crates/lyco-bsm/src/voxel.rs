@@ -199,11 +199,7 @@ impl Grid {
         if n == 0 {
             return [0, 0, 0];
         }
-        [
-            (sum[0] / n) as u8,
-            (sum[1] / n) as u8,
-            (sum[2] / n) as u8,
-        ]
+        [(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8]
     }
 }
 
@@ -237,7 +233,6 @@ fn aabb(points: &[[f32; 3]]) -> Option<([f32; 3], [f32; 3])> {
     Some((min, max))
 }
 
-
 /// Mark the voxels a surface passes through.
 ///
 /// Returns `None` when there is nothing to voxelise or the mesh is degenerate.
@@ -246,10 +241,7 @@ pub fn voxelize_surface(triangles: &[Triangle], cfg: &VoxelConfig) -> Option<Gri
         return None;
     }
 
-    let corners: Vec<[f32; 3]> = triangles
-        .iter()
-        .flat_map(|t| [t.a, t.b, t.c])
-        .collect();
+    let corners: Vec<[f32; 3]> = triangles.iter().flat_map(|t| [t.a, t.b, t.c]).collect();
     let (min, max) = aabb(&corners)?;
     let extent = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
     let longest = extent.iter().copied().fold(0.0f32, f32::max);
@@ -399,11 +391,7 @@ pub fn box_color(grid: &Grid, b: &Box3) -> [u8; 3] {
     if n == 0 {
         return [0, 0, 0];
     }
-    [
-        (sum[0] / n) as u8,
-        (sum[1] / n) as u8,
-        (sum[2] / n) as u8,
-    ]
+    [(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8]
 }
 
 #[cfg(test)]
@@ -445,7 +433,10 @@ mod tests {
             [3, 7, 4],
             [3, 4, 0],
         ];
-        faces.iter().map(|f| tri(v[f[0]], v[f[1]], v[f[2]])).collect()
+        faces
+            .iter()
+            .map(|f| tri(v[f[0]], v[f[1]], v[f[2]]))
+            .collect()
     }
 
     #[test]
@@ -555,15 +546,24 @@ mod tests {
         let mid_y = dy / 2;
         for x in 0..dx {
             assert!(grid.is_occupied(x, 0, mid_z), "hole at x={x} on a Y face");
-            assert!(grid.is_occupied(x, dy - 1, mid_z), "hole at x={x} on a Y face");
+            assert!(
+                grid.is_occupied(x, dy - 1, mid_z),
+                "hole at x={x} on a Y face"
+            );
         }
         for z in 0..dz {
             assert!(grid.is_occupied(0, mid_y, z), "hole at z={z} on an X face");
-            assert!(grid.is_occupied(dx - 1, mid_y, z), "hole at z={z} on an X face");
+            assert!(
+                grid.is_occupied(dx - 1, mid_y, z),
+                "hole at z={z} on an X face"
+            );
         }
         for y in 0..dy {
             assert!(grid.is_occupied(mid_x, y, 0), "hole at y={y} on a Z face");
-            assert!(grid.is_occupied(mid_x, y, dz - 1), "hole at y={y} on a Z face");
+            assert!(
+                grid.is_occupied(mid_x, y, dz - 1),
+                "hole at y={y} on a Z face"
+            );
         }
     }
 
