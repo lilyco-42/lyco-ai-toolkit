@@ -16,6 +16,11 @@ version = "0.1.0-dev"
 edition = "2021"
 license = "MIT"
 
+# Only entries a crate actually references. Run `cargo metadata` if in doubt.
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = "0.25"
