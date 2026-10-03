@@ -16,7 +16,7 @@
 //! 32 units tall: legs 0..12, body 12..24, head 24..32.
 
 use crate::bedrock::{Bone, Cube, Description, Geometry, GeometryFile};
-use crate::glb::{Glb, Gltf};
+use crate::glb::Glb;
 use lyco_mc_skin::{part_box, ArmModel, Layer, Part};
 
 /// Height of a player model in model units.
@@ -173,6 +173,7 @@ pub fn boxes_from_glb(_glb: &Glb) -> anyhow::Result<Geometry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::glb::Gltf;
     use lyco_mc_skin::Face;
 
     #[test]
