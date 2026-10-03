@@ -201,7 +201,11 @@ impl Glb {
         if gltf.asset.version.is_empty() {
             bail!("glTF asset.version is missing");
         }
-        Ok(Glb { gltf, bin, version })
+        Ok(Glb {
+            gltf,
+            bin,
+            version,
+        })
     }
 
     /// Read a VEC3 f32 accessor, e.g. a primitive's POSITION.

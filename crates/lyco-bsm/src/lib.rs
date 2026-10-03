@@ -9,14 +9,20 @@
 //!     the community maintains a dedicated decryption parser.
 //!   * The open, verifiable interchange target is **Bedrock geometry**
 //!     (`.geo.json`): plain JSON, importable by Blockbench, consumed by
-//!     ModelEngine / BetterModel.
+//!     ModelEngine / BetterModel. F2 targets that format.
 //!
-//! This crate therefore builds bottom-up from the parts that are certain:
-//! the GLB input side lives in [`glb`]. Bedrock geometry output follows once
-//! the F2 target format is confirmed (see _RESEARCH/00-requirement.md Q1).
+//! Built bottom-up from the parts that are certain:
+//!
+//!   * [`bedrock`] - the Bedrock geometry data model, writer and validator
+//!   * [`glb`] - the GLB (binary glTF 2.0) reader that feeds conversion
 
+pub mod bedrock;
 pub mod glb;
 
+pub use bedrock::{
+    Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Problem, Uv, FACES,
+    FORMAT_VERSION,
+};
 pub use glb::{Glb, Gltf};
 
 #[cfg(test)]
@@ -27,5 +33,14 @@ mod tests {
     fn glb_module_is_reachable_from_the_crate_root() {
         let err = Glb::parse(b"not a glb at all, definitely").unwrap_err();
         assert!(err.to_string().contains("not a GLB"), "{err}");
+    }
+
+    #[test]
+    fn bedrock_module_is_reachable_from_the_crate_root() {
+        let file = GeometryFile {
+            format_version: FORMAT_VERSION.to_string(),
+            geometry: Vec::new(),
+        };
+        assert_eq!(file.validate()[0].code, "no-geometry");
     }
 }
