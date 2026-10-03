@@ -1,0 +1,31 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Python (ACE-Step / Hunyuan3D / TRELLIS)
+__pycache__/
+*.pyc
+.venv/
+.conda/
+data/
+checkpoints/
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Research raw cache (dot-prefixed under _RESEARCH)
+_RESEARCH/._*
+_RESEARCH/.*.raw
+_RESEARCH/.*.json
+_RESEARCH/.*.html
+_RESEARCH/.*.md
+
+# Local git metadata
+.idea/
