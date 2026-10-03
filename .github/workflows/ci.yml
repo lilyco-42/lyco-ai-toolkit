@@ -121,5 +121,33 @@ jobs:
           fi
 
 
+      # The S5 acceptance criterion: one command, four artifacts.
+      - name: bundle smoke test (S5 acceptance)
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+
+          ./target/debug/lyco-cli bundle --prompt 'a quiet librarian' --out "$d/bundle" --bgm-duration 2
+
+          for f in skin.png model.geo.json bgm.wav portrait.png manifest.json; do
+            test -s "$d/bundle/$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+
+          # our own validators must accept what we emitted
+          ./target/debug/lyco-cli skin validate "$d/bundle/skin.png"
+          ./target/debug/lyco-cli bsm validate "$d/bundle/model.geo.json"
+
+          # the manifest must state which artifacts are placeholders
+          python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(sorted((a['kind'], a['placeholder']) for a in m['artifacts']))" "$d/bundle/manifest.json" | tee "$d/labels.txt"
+          grep -q "('model', False)" "$d/labels.txt"
+          grep -q "('portrait', True)" "$d/labels.txt"
+
+          # independent checks straight off the file headers
+          png_size() { python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(24); print(*struct.unpack('>II', d[16:24]))" "$1"; }
+          test "$(png_size "$d/bundle/skin.png")" = "64 64"
+          test "$(png_size "$d/bundle/portrait.png")" = "512 512"
+          python3 -c "import sys,wave; w=wave.open(sys.argv[1]); print(w.getnframes()/w.getframerate(), w.getnchannels())" "$d/bundle/bgm.wav" | grep -q '2.0 2'
+
+
       - name: fmt
         run: cargo fmt --all -- --check

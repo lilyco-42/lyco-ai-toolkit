@@ -11,8 +11,8 @@ pub mod backend;
 pub mod wav;
 
 pub use backend::{
-    verify_wav, AudioBackend, BgmRequest, BgmResult, CommandBackend, StubBackend,
-    DURATION_TOLERANCE,
+    backend_from_spec, verify_wav, AudioBackend, BgmRequest, BgmResult, CommandBackend,
+    StubBackend, DURATION_TOLERANCE,
 };
 pub use wav::{decode, encode, DecodedWav, WavError, DEFAULT_CHANNELS, DEFAULT_SAMPLE_RATE};
 

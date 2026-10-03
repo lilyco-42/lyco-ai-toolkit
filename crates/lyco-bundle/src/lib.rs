@@ -1,6 +1,9 @@
-// lyco-bundle - Orchestrate skin+3D+bgm+portrait bundle
-// DEEP-DIVE: see _RESEARCH/03-decision.md + 02-niche-knowledge.md
-use anyhow::Result;
-pub fn describe() -> Result<String> {
-    Ok("lyco-bundle".to_string())
-}
+//! lyco-bundle - assemble a complete character bundle (S5).
+//!
+//! See [`bundle`] for the orchestration. This crate is the only one that
+//! depends on all four capability crates, which keeps the dependency graph a
+//! tree rather than a web.
+
+pub mod bundle;
+
+pub use bundle::{build, Artifact, BundleRequest, Manifest};

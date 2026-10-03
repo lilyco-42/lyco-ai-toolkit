@@ -13,8 +13,9 @@
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use lyco_audio::{AudioBackend, BgmRequest, CommandBackend, StubBackend};
+use lyco_audio::{backend_from_spec, AudioBackend, BgmRequest};
 use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
+use lyco_bundle::{Artifact, BundleRequest};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
 };
@@ -28,7 +29,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Generate a full character bundle (skin + 3D + BGM + portrait)
+    /// Generate a full character bundle (skin + model + BGM + portrait)
     Bundle {
         /// Character description, e.g. 'a quiet librarian, grey hair, soft light'
         #[arg(long, short)]
@@ -36,6 +37,18 @@ enum Cmd {
         /// Output directory
         #[arg(long, short, default_value = "out")]
         out: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// BGM duration in seconds
+        #[arg(long, default_value_t = 30)]
+        bgm_duration: u32,
+        /// BGM backend: 'stub' or a generator command line
+        #[arg(long, default_value = "stub")]
+        bgm_backend: String,
+        /// Portrait backend: 'stub' or a generator command line
+        #[arg(long, default_value = "stub")]
+        image_backend: String,
     },
     /// Minecraft skin tools (F1)
     Skin {
@@ -174,6 +187,14 @@ fn main() -> Result<()> {
     restore_sigpipe();
     let cli = Cli::parse();
     match cli.cmd {
+        Cmd::Bundle {
+            prompt,
+            out,
+            arm,
+            bgm_duration,
+            bgm_backend,
+            image_backend,
+        } => run_bundle(prompt, out, arm, bgm_duration, bgm_backend, image_backend),
         Cmd::Skin { cmd } => run_skin(cmd),
         Cmd::Bsm { cmd } => run_bsm(cmd),
         Cmd::Bgm {
@@ -194,6 +215,45 @@ fn parse_arm(s: &str) -> Result<ArmModel> {
         "slim" | "alex" | "3" => Ok(ArmModel::Slim),
         other => bail!("unknown arm model '{other}': expected classic or slim"),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_bundle(
+    prompt: String,
+    out: String,
+    arm: String,
+    bgm_duration: u32,
+    bgm_backend: String,
+    image_backend: String,
+) -> Result<()> {
+    let mut request = BundleRequest::new(prompt, out);
+    request.arm = parse_arm(&arm)?;
+    request.bgm_duration_secs = bgm_duration;
+    request.bgm_backend = bgm_backend;
+    request.image_backend = image_backend;
+
+    let manifest = lyco_bundle::build(&request)?;
+
+    println!("bundle written to {}", request.out_dir.display());
+    for artifact in &manifest.artifacts {
+        println!("  {}", describe_artifact(artifact));
+    }
+    println!("  manifest.json");
+    for note in &manifest.notes {
+        println!("  note: {note}");
+    }
+    Ok(())
+}
+
+fn describe_artifact(artifact: &Artifact) -> String {
+    let flag = if artifact.placeholder {
+        "  <-- placeholder"
+    } else {
+        ""
+    };
+    let head = format!("{:<9} {:<16}", artifact.kind, artifact.file);
+    let tail = format!("{:<22} {:>9} B", artifact.backend, artifact.bytes);
+    format!("{head} {tail}{flag}")
 }
 
 fn run_skin(cmd: SkinCmd) -> Result<()> {
@@ -446,7 +506,7 @@ fn run_bgm(prompt: String, duration: u32, out: String, backend_spec: String) -> 
     if duration == 0 {
         bail!("--duration must be at least 1 second");
     }
-    let backend = build_backend(&backend_spec)?;
+    let backend = backend_from_spec(&backend_spec)?;
     if backend.name() == "stub" {
         eprintln!("warning: --backend stub synthesises a placeholder tone, not music.");
         eprintln!("         Point --backend at a real generator to produce actual BGM.");
@@ -460,23 +520,6 @@ fn run_bgm(prompt: String, duration: u32, out: String, backend_spec: String) -> 
     Ok(())
 }
 
-/// Resolve a `--backend` value into a generator.
-///
-/// `stub` selects the offline placeholder. Anything else is treated as a
-/// command line, so a real engine is wired in without this crate needing to
-/// know its arguments.
-fn build_backend(spec: &str) -> Result<Box<dyn AudioBackend>> {
-    let trimmed = spec.trim();
-    if trimmed.is_empty() {
-        bail!("--backend must not be empty");
-    }
-    if trimmed.eq_ignore_ascii_case("stub") {
-        return Ok(Box::new(StubBackend));
-    }
-    let program: Vec<String> = trimmed.split_whitespace().map(str::to_string).collect();
-    let backend = CommandBackend::new(trimmed.to_string(), program)?;
-    Ok(Box::new(backend))
-}
 
 fn arm_label(arm: Option<ArmModel>) -> &'static str {
     match arm {

@@ -9,4 +9,7 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 image = { workspace = true }
-tokio = { workspace = true }
+lyco-mc-skin = { path = "../lyco-mc-skin" }
+lyco-bsm = { path = "../lyco-bsm" }
+lyco-audio = { path = "../lyco-audio" }
+lyco-image = { path = "../lyco-image" }

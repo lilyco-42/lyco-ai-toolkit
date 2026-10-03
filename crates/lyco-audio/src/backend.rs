@@ -229,6 +229,24 @@ fn synthesize(prompt: &str, duration_secs: u32, sample_rate: u32, channels: u16)
     out
 }
 
+/// Resolve a spec into a backend.
+///
+/// `stub` selects the offline placeholder; anything else is treated as a
+/// command line, so a real engine is wired in without this crate needing to
+/// know its arguments.
+pub fn backend_from_spec(spec: &str) -> Result<Box<dyn AudioBackend>> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        bail!("a backend spec must not be empty");
+    }
+    if trimmed.eq_ignore_ascii_case("stub") {
+        return Ok(Box::new(StubBackend));
+    }
+    let program: Vec<String> = trimmed.split_whitespace().map(str::to_string).collect();
+    let backend = CommandBackend::new(trimmed.to_string(), program)?;
+    Ok(Box::new(backend))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,6 +328,15 @@ mod tests {
         let req = BgmRequest::new("x", 1, &path);
         let err = verify_wav(&path, &req).unwrap_err();
         assert!(err.to_string().contains("readable"), "{err}");
+    }
+
+    #[test]
+    fn spec_resolves_to_each_backend() {
+        assert_eq!(backend_from_spec("stub").unwrap().name(), "stub");
+        assert_eq!(backend_from_spec("  STUB ").unwrap().name(), "stub");
+        let cmd = backend_from_spec("python3 gen.py").unwrap();
+        assert_eq!(cmd.name(), "python3 gen.py");
+        assert!(backend_from_spec("   ").is_err());
     }
 
     #[test]
