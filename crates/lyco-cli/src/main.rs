@@ -4,13 +4,16 @@
 //! _RESEARCH/03-decision.md for the build-vs-buy matrix, and
 //! _RESEARCH/04-validation-checklist.md for milestones S0-S5.
 //!
-//! Implemented today: the `skin` group (F1). It is real, not scaffolded -
-//! template/validate/info/quantize all work offline with no GPU.
+//! Implemented today, all offline with no GPU:
+//!   * `skin` (F1) - template / validate / info / quantize
+//!   * `bsm`  (F2/F3) - humanoid / validate / info / glb-info
+//!
 //! Everything that needs an image or audio model still fails fast, so a green
 //! run can never be mistaken for a produced asset.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
 };
@@ -38,13 +41,10 @@ enum Cmd {
         #[command(subcommand)]
         cmd: SkinCmd,
     },
-    /// Generate a BSM/YSM entity model (F2/F3)
+    /// Minecraft model tools: Bedrock geometry and GLB inspection (F2/F3)
     Bsm {
-        /// Character description
-        prompt: String,
-        /// Output BSM path
-        #[arg(long, short)]
-        out: Option<String>,
+        #[command(subcommand)]
+        cmd: BsmCmd,
     },
     /// Generate background music (F6, via ACE-Step)
     Bgm {
@@ -111,10 +111,45 @@ enum SkinCmd {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum BsmCmd {
+    /// Write the standard player model as Bedrock geometry (.geo.json)
+    Humanoid {
+        /// Output .geo.json path
+        #[arg(long, short, default_value = "out/model.geo.json")]
+        out: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// Geometry identifier written into the file
+        #[arg(long, default_value = "geometry.lyco_player")]
+        identifier: String,
+    },
+    /// Validate a Bedrock geometry file; exits non-zero on any problem
+    Validate {
+        /// Geometry .geo.json to inspect
+        path: String,
+        /// Emit machine-readable JSON instead of a human summary
+        #[arg(long)]
+        json: bool,
+    },
+    /// Report a geometry file's bones, cubes and texture size
+    Info {
+        /// Geometry .geo.json to inspect
+        path: String,
+    },
+    /// Inspect a GLB container without converting it (F3 input side)
+    GlbInfo {
+        /// GLB file to inspect
+        path: String,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Skin { cmd } => run_skin(cmd),
+        Cmd::Bsm { cmd } => run_bsm(cmd),
         other => fail_fast(&other),
     }
 }
@@ -217,6 +252,160 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
     }
 }
 
+fn run_bsm(cmd: BsmCmd) -> Result<()> {
+    match cmd {
+        BsmCmd::Humanoid {
+            out,
+            arm,
+            identifier,
+        } => {
+            let arm = parse_arm(&arm)?;
+            let file = player_file(&identifier, arm);
+            let problems = file.validate();
+            if !problems.is_empty() {
+                print_problems(&problems);
+                bail!("the generated player model failed its own validation");
+            }
+            write_text(&out, &file.to_json()?)?;
+            let g = &file.geometry[0];
+            let (tw, th) = (g.description.texture_width, g.description.texture_height);
+            println!("wrote {out}");
+            println!("identifier: {}", g.description.identifier);
+            println!("arm model : {}", arm.name());
+            println!("bones     : {}", g.bones.len());
+            println!("cubes     : {}", g.cube_count());
+            println!("texture   : {tw}x{th}");
+            Ok(())
+        }
+
+        BsmCmd::Validate { path, json } => {
+            let file = load_geometry(&path)?;
+            let problems = file.validate();
+            if json {
+                println!("{}", geometry_report_json(&file, &problems));
+            } else {
+                let verdict = if problems.is_empty() { "valid" } else { "INVALID" };
+                println!("{verdict}: {} geometry entries", file.geometry.len());
+                print_problems(&problems);
+            }
+            if !problems.is_empty() {
+                bail!("{path}: {} problem(s)", problems.len());
+            }
+            Ok(())
+        }
+
+        BsmCmd::Info { path } => {
+            let file = load_geometry(&path)?;
+            println!("path  : {path}");
+            println!("format: {}", file.format_version);
+            for g in &file.geometry {
+                println!("geometry : {}", g.description.identifier);
+                println!("bones    : {}", g.bones.len());
+                println!("cubes    : {}", g.cube_count());
+                for b in &g.bones {
+                    let parent = b.parent.as_deref().unwrap_or("-");
+                    println!(
+                        "  {:<12} parent={:<12} cubes={}",
+                        b.name,
+                        parent,
+                        b.cubes.len()
+                    );
+                }
+            }
+            Ok(())
+        }
+
+        BsmCmd::GlbInfo { path } => {
+            let bytes = std::fs::read(&path)?;
+            let glb = Glb::parse(&bytes).with_context(|| format!("cannot read {path}"))?;
+            let g = &glb.gltf;
+            let generator = g.asset.generator.as_deref().unwrap_or("-");
+            println!("path       : {path}");
+            println!("glb version: {}", glb.version);
+            println!("generator  : {generator}");
+            println!("nodes      : {}", g.nodes.len());
+            println!("meshes     : {}", g.meshes.len());
+            println!("materials  : {}", g.materials.len());
+            println!("bin bytes  : {}", glb.bin.len());
+            for (i, mesh) in g.meshes.iter().enumerate() {
+                let name = mesh.name.as_deref().unwrap_or("(unnamed)");
+                println!("  mesh {i}: {name}, {} primitive(s)", mesh.primitives.len());
+                for (j, prim) in mesh.primitives.iter().enumerate() {
+                    println!("    primitive {j}: {}", primitive_summary(&glb, prim));
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Read and parse a Bedrock geometry file with a useful error message.
+fn load_geometry(path: &str) -> Result<GeometryFile> {
+    let text = std::fs::read_to_string(path)?;
+    GeometryFile::from_json(&text)
+        .with_context(|| format!("{path} is not valid Bedrock geometry JSON"))
+}
+
+/// Describe one glTF primitive by vertex and triangle count.
+fn primitive_summary(glb: &Glb, prim: &Primitive) -> String {
+    let Some(pos) = prim.attributes.position else {
+        return "no POSITION attribute".to_string();
+    };
+    let vertices = glb.read_vec3(pos).map(|v| v.len()).unwrap_or(0);
+    let triangles = prim
+        .indices
+        .and_then(|i| glb.read_indices(i).ok())
+        .map(|v| v.len() / 3)
+        .unwrap_or(0);
+    format!("{vertices} vertices, {triangles} triangles")
+}
+
+fn write_text(path: &str, text: &str) -> Result<()> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    std::fs::write(path, text)?;
+    Ok(())
+}
+
+fn print_problems(problems: &[Problem]) {
+    for p in problems {
+        println!("  [error] {}: {}", p.code, p.message);
+    }
+}
+
+fn geometry_report_json(file: &GeometryFile, problems: &[Problem]) -> String {
+    let issues: Vec<serde_json::Value> = problems
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "code": p.code,
+                "message": p.message,
+            })
+        })
+        .collect();
+    let geometry: Vec<serde_json::Value> = file
+        .geometry
+        .iter()
+        .map(|g| {
+            serde_json::json!({
+                "identifier": g.description.identifier,
+                "bones": g.bones.len(),
+                "cubes": g.cube_count(),
+            })
+        })
+        .collect();
+    let value = serde_json::json!({
+        "valid": problems.is_empty(),
+        "format_version": file.format_version,
+        "geometry": geometry,
+        "problems": issues,
+    });
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
 fn arm_label(arm: Option<ArmModel>) -> &'static str {
     match arm {
         Some(ArmModel::Classic) => "classic",
@@ -265,11 +454,11 @@ fn report_json(rep: &Report) -> String {
 fn fail_fast(cmd: &Cmd) -> Result<()> {
     let (what, next) = match cmd {
         Cmd::Bundle { .. } => ("bundle", "S5"),
-        Cmd::Bsm { .. } => ("bsm", "S2"),
         Cmd::Bgm { .. } => ("bgm", "S3"),
         Cmd::Lyrics { .. } => ("lyrics", "S4"),
         Cmd::Portrait { .. } => ("portrait", "S4"),
         Cmd::Skin { .. } => ("skin", "S1"),
+        Cmd::Bsm { .. } => ("bsm", "S2"),
     };
     bail!(
         "lyco-cli: subcommand '{what}' is scaffolded but not implemented yet.\n\

@@ -65,5 +65,35 @@ jobs:
             exit 1
           fi
 
+      # Proves F2/F3 end to end through the real binary.
+      - name: model roundtrip smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+
+          ./target/debug/lyco-cli bsm humanoid --out "$d/model.geo.json"
+          ./target/debug/lyco-cli bsm validate "$d/model.geo.json"
+          ./target/debug/lyco-cli bsm info "$d/model.geo.json"
+          ./target/debug/lyco-cli bsm validate --json "$d/model.geo.json"
+
+          # the slim variant must be valid too
+          ./target/debug/lyco-cli bsm humanoid --out "$d/slim.geo.json" --arm slim
+          ./target/debug/lyco-cli bsm validate "$d/slim.geo.json"
+          grep -q 'geometry.lyco_player' "$d/slim.geo.json"
+          grep -q '"right_arm"' "$d/slim.geo.json"
+
+          # an empty geometry list must be rejected with a non-zero exit
+          printf '%s' '{"format_version":"1.12.0","minecraft:geometry":[]}' > "$d/bad.geo.json"
+          if ./target/debug/lyco-cli bsm validate "$d/bad.geo.json" 2>/dev/null; then
+            echo 'an empty geometry file must exit non-zero'
+            exit 1
+          fi
+
+          # build a minimal GLB and inspect it through the CLI
+          python3 scripts/make-test-glb.py "$d/model.glb"
+          ./target/debug/lyco-cli bsm glb-info "$d/model.glb" | tee "$d/glb.txt"
+          grep -q '3 vertices, 1 triangles' "$d/glb.txt"
+
+
       - name: fmt
         run: cargo fmt --all -- --check
