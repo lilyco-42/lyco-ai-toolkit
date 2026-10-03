@@ -244,7 +244,11 @@ mod tests {
         let req = BgmRequest::new("a calm evening", 2, tmp("stub.wav"));
         let result = StubBackend.generate(&req).expect("generate");
         assert_eq!(result.backend, "stub");
-        assert!((result.duration_secs - 2.0).abs() < 0.01, "{}", result.duration_secs);
+        assert!(
+            (result.duration_secs - 2.0).abs() < 0.01,
+            "{}",
+            result.duration_secs
+        );
         assert!(result.bytes > 44, "must contain samples, not just a header");
     }
 
@@ -347,11 +351,9 @@ mod tests {
         drop(f);
         // A generator that writes garbage must fail verification, not pass.
         // Go through `sh` so the test does not depend on the executable bit.
-        let backend = CommandBackend::new(
-            "fake",
-            vec!["sh".to_string(), script.display().to_string()],
-        )
-        .expect("construct");
+        let backend =
+            CommandBackend::new("fake", vec!["sh".to_string(), script.display().to_string()])
+                .expect("construct");
         let req = BgmRequest::new("x", 1, tmp("fake-out.wav"));
         let err = backend.generate(&req).unwrap_err();
         assert!(

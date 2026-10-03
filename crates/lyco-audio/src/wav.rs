@@ -91,7 +91,11 @@ impl DecodedWav {
 
     /// Peak absolute amplitude, for "is this file actually silent?" checks.
     pub fn peak(&self) -> i16 {
-        self.samples.iter().map(|s| s.saturating_abs()).max().unwrap_or(0)
+        self.samples
+            .iter()
+            .map(|s| s.saturating_abs())
+            .max()
+            .unwrap_or(0)
     }
 }
 
