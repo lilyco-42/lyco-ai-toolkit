@@ -46,8 +46,12 @@
 
 ## 模糊点（需用户回答）
 
-- Q1 (F2/F3): 3D 目标格式是 **Minecraft 实体模型 (BSM/YSM)** 还是 **通用 3D 资产**
-  (glb/glTF)? YSM/BSM 仅 MC 用
+- **Q1 (F2/F3) — 阻塞 S2**: 「BSM」到底指什么？
+  - 实测：Blockbench 的 `js/formats/` 里**没有** bsm / ysm 模块（它是 GPL-3.0 不是 MIT）
+  - 实测：**YSM = Yes Steve Model 模组私有格式，且是加密二进制**（OpenYSM 在写解密 parser）
+  - 实测：GitHub 搜不到任何名为 **BSM** 的模型格式
+  - 可选落点：(A) **Bedrock geometry `.geo.json`**（开放 JSON、Blockbench 可导入、BetterModel 消费）
+    (B) 只做 GLB 解析 + 体素化，输出交给下游  (C) 投 YSM 逆向（高风险，依赖 OpenYSM 许可）
 - Q2 (F6): 音乐「带人声」还是**纯 BGM**? 人声本地极难、在线依赖 Suno 系
 - Q3 (F4/F5): 混元 3D 必须走腾讯 API，还是也要支持 **本地 3D 生成模型**
   (Hunyuan3D-2 本地 / TRELLIS.2 / TripoSR)?
@@ -60,7 +64,7 @@
 
 | 问题 | 默认 | 触发重审条件 |
 |---|---|---|
-| Q1 3D 主格式 | A: BSM/YSM 优先 | S2 验证 BSM 兼容失败 -> 切 B (glb) |
+| Q1 3D 主格式 | **已阻塞，等用户答复** | 原默认「BSM/YSM 优先」基于错误前提，已作废 |
 | Q2 音乐 | A: 纯 BGM 本地 | S3 ACE-Step 中文不达标 -> 切 B (带人声在线) |
 | Q3 混元 | C: 本地 + API 并存 | 本地 S2 失败 + API 报价可接受 -> 切 A (API 主力) |
 | Q4 代码生成 | C: CLI + MCP 双端 | S5 不需要 MCP -> 只出 CLI (B) |

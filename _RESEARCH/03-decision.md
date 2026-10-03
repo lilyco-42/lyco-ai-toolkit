@@ -11,8 +11,8 @@
 | 域 | 自研 / 用现成 | 选择 | 工作量估计 | 风险 |
 |---|---|---|---|---|
 | F1 MC Skin 64x64 | **自研**（调用 ComfyUI 出图 + 自研 palette 量化） | 自研 (palette quantize + skin UV 校验) | 3-5 天 | palette 6-8 色需手调，可能效果差 |
-| F2 BSM/YSM 实体模型 | **自研**（BlockBench 太重型，GPLv3 不便） | 自研 (JSON/BSM 序列化) | 5-7 天 | 格式细节多，需反复对 BlockBench 验证 |
-| F3 GLB -> BSM 转换 | **自研**（无现成仓库） | 自研 (mcmeta 格式映射) | 5-7 天 | glTF cube 与 MC cube 不对齐，需手动映射 |
+| F2 Minecraft 实体模型 | **自研**（目标格式待澄清） | 先做 **Bedrock geometry** 序列化 | 3-5 天 | **BSM 无此格式；YSM 是加密二进制**（见 02 第五节） |
+| F3 GLB → Minecraft 模型 | **自研**（无现成仓库） | 自研（GLB 解析 + 体素化/盒拟合） | 5-7 天 | 是几何重算不是格式转换；GLB 解析可先独立完成 |
 | F4 Hunyuan3D | **用现成**（双路并存） | 调用 (开源于 MIT + 腾讯 API) | 1-2 天 | GPU 24G，或 API 付费 |
 | F5 本地 3D (TRELLIS-2/TripoSR) | **用现成** | 调用 (Python 子进程) | 1 天 | VRAM 紧张时 OOM |
 | F6 音乐生成 | **用现成**（ACE-Step） | 调用 (Python 子进程或 HTTP) | 1 天 | 中文 BGM 质量稳定 |

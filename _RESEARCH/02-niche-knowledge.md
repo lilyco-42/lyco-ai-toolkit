@@ -59,17 +59,59 @@
   - flash-attn 后端，V100 等老卡需 xformers
 - 踩坑:
   - 4B 参数 + flash-attn 编译是最大坑（首次约 30 分钟）
-  - 输出格式：原生支持 glb / obj（与 YSM 兼容）
+  - 输出格式：原生支持 glb / obj（**注意：glb 不等于 YSM，见第五节**）
   - 权重 microsoft/TRELLIS.2-4B 开源下载
 
-## 五、BSM/YSM 转换（Minecraft 模型生态 · 无人之境）
+## 五、BSM/YSM 转换 —— **已修正（2026-07-21 二次核查）**
 
-- BlockBench Dev 工具垄断：bsm-tools 仓库不存在（404 已验证）
-- 现状（社区共识，无 GitHub 主仓库）:
-  - BSM/YSM 格式规范无独立 open repo，依赖 BlockBench 源码（MIT）解析
-  - YSM = Yasf 格式的 Model JSON + 贴图，由 BlockBench 1.x 输出
-  - GLB 转 BSM 无现成工具（已验证 bsm-tools 404）
-- 路线判断：glb-to-bsm 需要自研（fork MIT BlockBench 源码 + 改造，约 500-1500 LOC）
+> ⚠️ 本节早期版本称「YSM/BSM 是 BlockBench 格式」并引用「BlockBench 源码（MIT）」。
+> **该结论是错的**，已作废。以下是实测事实。
+
+### 5.1 Blockbench 到底支持哪些格式（实测 `js/formats/` 目录）
+
+`JannisX11/blockbench`（6,021★，**GPL-3.0**，非 MIT）的实际格式模块：
+
+| 目录 | 格式 |
+|---|---|
+| `bbmodel.js` | Blockbench 自有工程格式 `.bbmodel` |
+| `bedrock/` | Bedrock 几何 / 动画 / attachable / voxel shape |
+| `java/` | Java Block、**Modded Entity** |
+| `optifine/` | OptiFine JEM / JPM |
+| `standards/` | collada / fbx / **gltf** / obj / stl |
+| `minecraft/skin.ts` | **Minecraft 皮肤**（F1 可参考） |
+
+**结论：不存在 `bsm` 或 `ysm` 格式模块。** 这两个都不是 Blockbench 格式。
+
+### 5.2 YSM 实测 = Yes Steve Model 模组，且模型是**加密二进制**
+
+| 仓库 | 星 | 说明 |
+|---|---|---|
+| `YesSteveModel/YesSteveModel` | 43 | 上游模组本体 |
+| `OpenYSM/YSMParser` | 589 | *"A Parser to recover Yes-Steve-Model **Encrypted Binaries**"* |
+| `OpenYSM/OpenYSM` | 437 | OpenYSM 替代实现 |
+| `Elaina69/Yes-Steve-Model-Repo` | 3,422 | 模型资源集合 |
+| `Huli-fox/YesSteveModel-Unofficial` | 58 | 反移植到 1.7.10 |
+
+- `.ysm` **不是** Model JSON，是模组私有格式；社区要写 parser 去「恢复加密二进制」
+- 因此「GLB → YSM」不是格式转换，而是**逆向 + 重新编码**，风险与工作量远高于原估计
+
+### 5.3 BSM 未找到任何标准格式
+
+GitHub 搜索 `bsm minecraft model` / `bettermodel minecraft` 的结果里：
+**没有任何格式叫 BSM**。唯一同名命中是一个 Bedrock 聊天过滤器（ML 模型，无关）。
+
+最接近的可选项是 `toxicity188/BetterModel`（345★，*Modern Bedrock model engine for
+Minecraft Java Edition*），它消费的是 **Bedrock 几何**，不是 BSM。
+
+**⇒ BSM 需要用户澄清其确切含义后才能动工。**
+
+### 5.4 修订后的路线
+
+1. **确定的交换格式是 Bedrock geometry（`.geo.json`）** —— 开放、JSON、Blockbench
+   可导入导出、ModelEngine / BetterModel 消费。**这是 F3 应当瞄准的落点。**
+2. GLB → Bedrock geometry 需要自研（体素化 / 盒拟合），但格式是公开且可验证的。
+3. YSM 单独作为一条高风险支线（需先评估 OpenYSM 的逆向成果与许可）。
+4. BSM 待澄清。
 
 ## 六、Minecraft Skin 64x64（无人之境）
 

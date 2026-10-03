@@ -17,17 +17,25 @@
 | **BlockBench** | [JannisX11/blockbench](https://github.com/JannisX11/blockbench) | 生成/校验 64x64 PNG 工具链 | 19k+ 星，GPLv3 |
 | 在线皮肤生成器（minecraft-skins.com 等） | 在线服务 | 兜底：用户手动导入 | 不引入代码 |
 
-### F2 Minecraft BSM/YSM 实体模型
-| 候选 | 来源 | 用途 | 备注 |
-|---|---|---|---|
-| **BlockBench（官方）** | [JannisX11/blockbench](https://github.com/JannisX11/blockbench) | 唯一活跃 BSM/YSM 编辑器 | GPLv3，Electron 客户端 + JS lib，可参考其序列化逻辑 |
-| 格式规范 | BlockBench docs + mcmeta | 文档 | YSB/BSM/YSM 是不同变体；YSM 是 Yarn 命名，Y 轴旋转方向有差异 |
+### F2 Minecraft 实体模型（**目标格式待澄清**）
 
-### F3 GLB → BSM/YSM 转换
+> ⚠️ 早期版本本节称「YSM/BSM 是 BlockBench 格式」——**错误，已作废**。
+> 详见 [02-niche-knowledge.md](02-niche-knowledge.md) 第五节。
+
 | 候选 | 来源 | 用途 | 备注 |
 |---|---|---|---|
-| **无现成方案** | GitHub 搜索 "gltf to bsm" **0 结果** | **必须自研** | 算法基于 mcmeta 的 cube/cubeRotation 格式 |
-| mcmeta（格式参考） | [misode/mcmeta](https://github.com/misode/mcmeta) | 数据格式规范 | 唯一权威来源 |
+| ~~BSM~~ | **无此标准格式** | — | GitHub 搜索无任何名为 BSM 的模型格式 |
+| **YSM** | [YesSteveModel/YesSteveModel](https://github.com/YesSteveModel/YesSteveModel) | Yes Steve Model 模组私有格式 | **加密二进制**，非 JSON；社区在逆向 |
+| YSM 逆向成果 | [OpenYSM/YSMParser](https://github.com/OpenYSM/YSMParser) (589★) | 解密 parser | 需先评估其许可与完成度 |
+| **Bedrock geometry** | [JannisX11/blockbench](https://github.com/JannisX11/blockbench) `js/formats/bedrock/` | **推荐的开放落点** | 开放 JSON，Blockbench 可导入导出 |
+| BetterModel | [toxicity188/BetterModel](https://github.com/toxicity188/BetterModel) (345★) | Java 端渲染 Bedrock 模型 | 消费 Bedrock geometry，非 BSM |
+
+### F3 GLB → Minecraft 模型转换
+| 候选 | 来源 | 用途 | 备注 |
+|---|---|---|---|
+| **无现成方案** | GitHub 搜索 `gltf to bsm` **0 结果** | **必须自研** | 需要体素化 / 盒拟合，非纯格式转换 |
+| glTF / GLB 规范 | Khronos glTF 2.0（开放标准） | 输入侧格式 | 容器 + JSON + BIN 三块，可离线解析 |
+| mcmeta | [misode/mcmeta](https://github.com/misode/mcmeta) | 参考数据格式 | Blockbench 的 `js/formats/` 是更直接的格式权威 |
 
 ### F4 混元 3D（Hunyuan3D：文本/图 → 3D GLB）
 | 候选 | 来源 | 类型 | 备注 |
