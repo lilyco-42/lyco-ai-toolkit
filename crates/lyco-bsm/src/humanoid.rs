@@ -128,8 +128,7 @@ pub fn player_geometry(identifier: &str, arm: ArmModel) -> Geometry {
         };
 
         let base = Cube::boxed(spec.origin, size, anchor(spec.part, Layer::Base, arm));
-        let mut overlay =
-            Cube::boxed(spec.origin, size, anchor(spec.part, Layer::Overlay, arm));
+        let mut overlay = Cube::boxed(spec.origin, size, anchor(spec.part, Layer::Overlay, arm));
         overlay.inflate = Some(spec.overlay_inflate);
 
         let mut bone = Bone::new(spec.name).with_pivot(spec.pivot);
@@ -189,7 +188,11 @@ mod tests {
     fn has_six_bones_twelve_cubes() {
         let g = player_geometry("geometry.lyco_player", ArmModel::Classic);
         assert_eq!(g.bones.len(), 6);
-        assert_eq!(g.cube_count(), 12, "each bone has a base and an overlay cube");
+        assert_eq!(
+            g.cube_count(),
+            12,
+            "each bone has a base and an overlay cube"
+        );
     }
 
     #[test]
