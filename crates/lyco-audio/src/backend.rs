@@ -346,8 +346,12 @@ mod tests {
         f.write_all(body.as_bytes()).expect("write");
         drop(f);
         // A generator that writes garbage must fail verification, not pass.
-        let backend =
-            CommandBackend::new("fake", vec![script.display().to_string()]).expect("construct");
+        // Go through `sh` so the test does not depend on the executable bit.
+        let backend = CommandBackend::new(
+            "fake",
+            vec!["sh".to_string(), script.display().to_string()],
+        )
+        .expect("construct");
         let req = BgmRequest::new("x", 1, tmp("fake-out.wav"));
         let err = backend.generate(&req).unwrap_err();
         assert!(
