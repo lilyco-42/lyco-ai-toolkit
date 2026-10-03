@@ -623,5 +623,3 @@ fn report_json(rep: &Report) -> String {
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
-
-

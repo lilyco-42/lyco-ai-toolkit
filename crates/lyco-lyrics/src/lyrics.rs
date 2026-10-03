@@ -227,7 +227,10 @@ impl Lyrics {
     }
 
     pub fn ok(&self) -> bool {
-        !self.validate().iter().any(|i| i.severity == Severity::Error)
+        !self
+            .validate()
+            .iter()
+            .any(|i| i.severity == Severity::Error)
     }
 
     /// Structural checks. These are about shape, not about whether the words
