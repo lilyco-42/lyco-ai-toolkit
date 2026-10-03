@@ -4,12 +4,18 @@
 //! _RESEARCH/03-decision.md for the build-vs-buy matrix, and
 //! _RESEARCH/04-validation-checklist.md for milestones S0-S5.
 //!
-//! Implemented today, all offline with no GPU:
+//! Every subcommand is implemented and works offline with no GPU:
+//!   * `bundle`   - skin + model + BGM + portrait + lyrics, with a manifest
 //!   * `skin` (F1) - template / validate / info / quantize
 //!   * `bsm`  (F2/F3) - humanoid / validate / info / glb-info
+//!   * `bgm`  (F6) - background music
+//!   * `lyrics` (F8) - sectioned lyric sheets
+//!   * `portrait` (F7) - a single portrait
 //!
-//! Everything that needs an image or audio model still fails fast, so a green
-//! run can never be mistaken for a produced asset.
+//! What needs a model (diffusion, an audio engine, an LLM) is reached through a
+//! subprocess backend the operator points at. The built-in `stub` backends are
+//! labelled as placeholders on every surface, so a green run can never be
+//! mistaken for a produced asset.
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -229,7 +235,6 @@ fn main() -> Result<()> {
             out,
             backend,
         } => run_portrait(prompt, out, backend),
-        other => fail_fast(&other),
     }
 }
 
@@ -619,17 +624,4 @@ fn report_json(rep: &Report) -> String {
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
 
-fn fail_fast(cmd: &Cmd) -> Result<()> {
-    let (what, next) = match cmd {
-        Cmd::Bundle { .. } => ("bundle", "S5"),
-        Cmd::Bgm { .. } => ("bgm", "S3"),
-        Cmd::Lyrics { .. } => ("lyrics", "S4"),
-        Cmd::Portrait { .. } => ("portrait", "S4"),
-        Cmd::Skin { .. } => ("skin", "S1"),
-        Cmd::Bsm { .. } => ("bsm", "S2"),
-    };
-    bail!(
-        "lyco-cli: subcommand '{what}' is scaffolded but not implemented yet.\n\
-         Next milestone: {next} - see _RESEARCH/04-validation-checklist.md"
-    );
-}
+
