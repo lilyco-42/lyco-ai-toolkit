@@ -45,7 +45,9 @@ impl Default for VoxelConfig {
 const MAX_STEPS: u32 = 24;
 
 /// A dense occupancy grid in model space, plus a colour per voxel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// No `Eq`: `voxel_size` is an `f32`, so only `PartialEq` is available.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Grid {
     dims: [u32; 3],
     occupied: Vec<bool>,
