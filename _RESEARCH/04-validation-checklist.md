@@ -8,7 +8,7 @@
 - [x] cargo workspace：6 个 crate 占位（lyco-cli / lyco-mc-skin / lyco-bsm / lyco-bundle / lyco-lyrics / lyco-codegen-mcp）
 - [x] gh repo create lilyco-42/lyco-ai-toolkit（private）
 - [x] 写 _RESEARCH/00-04 共 5 份调研文档
-- [ ] .github/workflows/ci.yml：cargo check + fmt + clippy（占位，下次提交）
+- [x] .github/workflows/ci.yml：cargo check + fmt + clippy（fmt + clippy + build + CLI smoke）
 
 ## S1（第 1-2 天）F1 MC Skin 单点
 - [ ] lyco-mc-skin::palette_quantize()：6-8 色 k-means（imagequant crate）
@@ -59,3 +59,16 @@
 | 腾讯云 API 报价不可接受 | S2 后评估 | 全部走本地（2.0 + ComfyUI）|
 
 — MVP 验证清单 —
+
+## S0 验证证据（本次执行，已实测）
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| workspace 编译 | `cargo check --workspace` | 通过 |
+| 构建 | `cargo build --workspace` | 通过 |
+| 格式 | `cargo fmt --all -- --check` | 通过 |
+| lint | `cargo clippy --workspace --all-targets` | 0 warning |
+| CLI 版本 | `lyco-cli --version` | `lyco-cli 0.1.0-dev` |
+| CLI 帮助 | `lyco-cli --help` | 6 个子命令可见 |
+| fail-fast | `lyco-cli bundle --prompt x` | exit=1 + 指回本清单 |
+| 远端 | `gh api repos/lilyco-42/lyco-ai-toolkit` | private, main |
