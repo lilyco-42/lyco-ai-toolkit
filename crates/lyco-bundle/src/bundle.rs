@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use lyco_audio::{backend_from_spec as audio_backend, BgmRequest};
 use lyco_bsm::player_file;
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
+use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{ArmModel, Skin};
 
 /// One produced file, and what produced it.
@@ -49,6 +50,7 @@ pub struct BundleRequest {
     pub bgm_duration_secs: u32,
     pub bgm_backend: String,
     pub image_backend: String,
+    pub lyrics_backend: String,
 }
 
 impl BundleRequest {
@@ -60,6 +62,7 @@ impl BundleRequest {
             bgm_duration_secs: 30,
             bgm_backend: "stub".to_string(),
             image_backend: "stub".to_string(),
+            lyrics_backend: "stub".to_string(),
         }
     }
 }
@@ -141,6 +144,24 @@ pub fn build(req: &BundleRequest) -> Result<Manifest> {
         notes.push("portrait.png is a procedural placeholder, not a likeness".to_string());
     }
 
+    // 5. Lyrics. Placed after the four the acceptance criteria name, because
+    //    they are a superset rather than a replacement.
+    let lyrics_path = req.out_dir.join("lyrics.txt");
+    let writer = lyrics_backend(&req.lyrics_backend)?;
+    let lyrics_req = LyricsRequest::new(req.prompt.clone(), &lyrics_path);
+    let lyrics = writer.generate(&lyrics_req)?;
+    let stub_lyrics = writer.name() == "stub";
+    artifacts.push(Artifact {
+        kind: "lyrics".to_string(),
+        file: "lyrics.txt".to_string(),
+        backend: lyrics.backend.clone(),
+        bytes: std::fs::metadata(&lyrics_path)?.len(),
+        placeholder: stub_lyrics,
+    });
+    if stub_lyrics {
+        notes.push("lyrics.txt is placeholder lines, not songwriting".to_string());
+    }
+
     let manifest = Manifest {
         prompt: req.prompt.clone(),
         arm: req.arm.name().to_string(),
@@ -171,7 +192,7 @@ mod tests {
         let manifest = build(&req).expect("build");
 
         let kinds: Vec<&str> = manifest.artifacts.iter().map(|a| a.kind.as_str()).collect();
-        assert_eq!(kinds, vec!["skin", "model", "bgm", "portrait"]);
+        assert_eq!(kinds, vec!["skin", "model", "bgm", "portrait", "lyrics"]);
         for artifact in &manifest.artifacts {
             let path = req.out_dir.join(&artifact.file);
             assert!(path.exists(), "{} missing", artifact.file);
@@ -226,7 +247,8 @@ mod tests {
             !find("model").placeholder,
             "the humanoid model is real geometry"
         );
-        assert_eq!(manifest.notes.len(), 3);
+        assert!(find("lyrics").placeholder);
+        assert_eq!(manifest.notes.len(), 4);
     }
 
     #[test]

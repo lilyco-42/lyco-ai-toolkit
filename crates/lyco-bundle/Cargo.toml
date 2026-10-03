@@ -13,3 +13,4 @@ lyco-mc-skin = { path = "../lyco-mc-skin" }
 lyco-bsm = { path = "../lyco-bsm" }
 lyco-audio = { path = "../lyco-audio" }
 lyco-image = { path = "../lyco-image" }
+lyco-lyrics = { path = "../lyco-lyrics" }

@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 use lyco_audio::{backend_from_spec, BgmRequest};
 use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
 use lyco_bundle::{Artifact, BundleRequest};
+use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
 };
@@ -75,10 +76,17 @@ enum Cmd {
         #[arg(long, default_value = "stub")]
         backend: String,
     },
-    /// Generate lyrics with verse/chorus/bridge structure (F8, not implemented)
+    /// Generate lyrics with verse/chorus/bridge structure (F8)
     Lyrics {
         /// Theme or title
+        #[arg(long, short)]
         prompt: String,
+        /// Output text path
+        #[arg(long, short, default_value = "out/lyrics.txt")]
+        out: String,
+        /// 'stub' for the offline placeholder, or a writer command line
+        #[arg(long, default_value = "stub")]
+        backend: String,
     },
     /// Generate just a portrait (F7, not implemented; `bundle` covers it)
     Portrait {
@@ -203,6 +211,11 @@ fn main() -> Result<()> {
             out,
             backend,
         } => run_bgm(prompt, duration, out, backend),
+        Cmd::Lyrics {
+            prompt,
+            out,
+            backend,
+        } => run_lyrics(prompt, out, backend),
         other => fail_fast(&other),
     }
 }
@@ -500,6 +513,20 @@ fn geometry_report_json(file: &GeometryFile, problems: &[Problem]) -> String {
         "problems": issues,
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn run_lyrics(prompt: String, out: String, backend_spec: String) -> Result<()> {
+    let backend = lyrics_backend(&backend_spec)?;
+    if backend.name() == "stub" {
+        eprintln!("warning: --backend stub writes placeholder lines, not songwriting.");
+    }
+    let request = LyricsRequest::new(prompt, out);
+    let result = backend.generate(&request)?;
+    println!("wrote {}", result.path.display());
+    println!("backend  : {}", result.backend);
+    println!("sections : {}", result.sections);
+    println!("lines    : {}", result.lines);
+    Ok(())
 }
 
 fn run_bgm(prompt: String, duration: u32, out: String, backend_spec: String) -> Result<()> {
