@@ -50,10 +50,25 @@
   **已获得的交叉验证**：官方 `armor_stand.geo.json` 的 `hat` 骨 cube `uv` 为 `[32, 0]`，
   正好等于 F1 核实过的皮肤**头部 overlay 锚点 (32,0)** ⇒ 两套坐标系同源。
 
-## S3（第 5 天）F6 BGM 单点
-- [ ] lyco-bundle::bgm()：subprocess acestep --prompt '...' --duration 30
-- [ ] 测试 ACE-Step 中文 LoRA 识别 1 句中文
-- [ ] **验收**：lyco-cli bgm --prompt '...' 输出 30 秒 wav + 转 mp3
+## S3 — F6 BGM ✅ **离线部分已完成**（需要 GPU 的部分在边界外）
+
+- [x] `lyco-audio::wav` — 手写 16-bit PCM 编**解**码器
+      编码是为了产出，**解码是为了验证**：生成的音频必须能被独立解析出时长和峰值
+      —— 测试 9 passed
+- [x] `lyco-audio::backend` — `AudioBackend` trait + 两个实现
+      - `StubBackend`：离线确定性合成（FNV-1a 由 prompt 决定音高），
+        在 CLI 里以 `--backend stub` 显式暴露并打印警告，不可能被误认为真实音乐
+      - `CommandBackend`：把生成器当子进程跑，只约定
+        `--prompt <text> --duration <secs> --out <path>`，**不对任何引擎的 CLI 做假设**
+      —— 测试 10 passed + 1 集成测试
+- [x] **关键设计**：两条路径最后都过 `verify_wav()` —— 解码产出、校验时长与静音，
+      **绝不把子进程的退出码当作产出成功的证据**
+- [x] `lyco-cli bgm --prompt ... --duration N --out x.wav [--backend stub|'<命令行>']`
+- [x] **验收证据**：CI 每次用 **Python 标准库 `wave` 独立解码**校验我们的 WAV 写出器 ——
+      `2.0 2 2`（2 秒 / 立体声 / 16 位）；同一 prompt 两次产出字节相同；
+      不存在的 backend 必须非零退出
+- [ ] 接真实 ACE-Step —— **需要 GPU 主机**（8000 显存，4090 上 34x 实时）
+- [ ] 转 mp3 —— 需要 ffmpeg/lame，尚未接入
 
 ## S4（第 6 天）F7 图像 + F8 歌词单点
 - [ ] lyco-bundle::portrait()：ComfyUI SDXL 出 512x512 portrait
@@ -105,10 +120,10 @@
 
 | 能力 | crate | 测试 | CI 额外验证 |
 |---|---|---|---|
-| F1 MC skin | lyco-mc-skin | 35 | CLI 端到端闭环 + 垃圾输入必须失败 |
-| F3 GLB 解析 | lyco-bsm::glb | 7 | — |
-| F2 Bedrock geometry | lyco-bsm::bedrock | 10 | 官方 armor_stand 样本往返 |
-| **合计** | | **54** | clippy -D warnings + fmt + build |
+| F1 MC skin | lyco-mc-skin | 35 | skin 闭环 + 垃圾输入必须失败 |
+| F2/F3 模型 | lyco-bsm | 30 | humanoid 闭环 + 用 Python 造真实 GLB 喂给 glb-info |
+| F6 BGM | lyco-audio | 20 | bgm 闭环 + **Python `wave` 独立解码**校验写出器 |
+| **合计** | | **85** | clippy -D warnings + fmt + build + 3 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
 因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
