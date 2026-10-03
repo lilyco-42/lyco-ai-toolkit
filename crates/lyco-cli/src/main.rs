@@ -284,7 +284,11 @@ fn run_bsm(cmd: BsmCmd) -> Result<()> {
             if json {
                 println!("{}", geometry_report_json(&file, &problems));
             } else {
-                let verdict = if problems.is_empty() { "valid" } else { "INVALID" };
+                let verdict = if problems.is_empty() {
+                    "valid"
+                } else {
+                    "INVALID"
+                };
                 println!("{verdict}: {} geometry entries", file.geometry.len());
                 print_problems(&problems);
             }
