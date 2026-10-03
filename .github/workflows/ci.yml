@@ -27,19 +27,15 @@ jobs:
       - name: build
         run: cargo build --workspace
 
-      - name: cli must fail fast on unimplemented subcommands
+      - name: cli surface smoke test
         run: |
           set -euo pipefail
           ./target/debug/lyco-cli --version
           ./target/debug/lyco-cli --help
-          # Subcommands with no implementation yet must still fail fast,
-          # so a green pipeline can never imply an asset was produced.
-          if ./target/debug/lyco-cli lyrics --prompt x; then
-            echo 'unimplemented subcommands must fail fast'
-            exit 1
-          fi
-          if ./target/debug/lyco-cli portrait --prompt x; then
-            echo 'unimplemented subcommands must fail fast'
+          # An unknown subcommand must fail, so the smoke test can never pass
+          # by accident on a CLI that silently ignores its arguments.
+          if ./target/debug/lyco-cli definitely-not-a-command 2>/dev/null; then
+            echo 'an unknown subcommand must exit non-zero'
             exit 1
           fi
 

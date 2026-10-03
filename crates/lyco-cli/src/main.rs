@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 use lyco_audio::{backend_from_spec, BgmRequest};
 use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
 use lyco_bundle::{Artifact, BundleRequest};
+use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
 use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
@@ -88,10 +89,17 @@ enum Cmd {
         #[arg(long, default_value = "stub")]
         backend: String,
     },
-    /// Generate just a portrait (F7, not implemented; `bundle` covers it)
+    /// Generate just a portrait (F7)
     Portrait {
         /// Character description
+        #[arg(long, short)]
         prompt: String,
+        /// Output PNG path
+        #[arg(long, short, default_value = "out/portrait.png")]
+        out: String,
+        /// 'stub' for the offline placeholder, or a generator command line
+        #[arg(long, default_value = "stub")]
+        backend: String,
     },
 }
 
@@ -216,6 +224,11 @@ fn main() -> Result<()> {
             out,
             backend,
         } => run_lyrics(prompt, out, backend),
+        Cmd::Portrait {
+            prompt,
+            out,
+            backend,
+        } => run_portrait(prompt, out, backend),
         other => fail_fast(&other),
     }
 }
@@ -513,6 +526,20 @@ fn geometry_report_json(file: &GeometryFile, problems: &[Problem]) -> String {
         "problems": issues,
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn run_portrait(prompt: String, out: String, backend_spec: String) -> Result<()> {
+    let backend = image_backend(&backend_spec)?;
+    if backend.name() == "stub" {
+        eprintln!("warning: --backend stub draws a procedural placeholder, not a likeness.");
+    }
+    let request = PortraitRequest::new(prompt, out);
+    let result = backend.generate(&request)?;
+    println!("wrote {}", result.path.display());
+    println!("backend  : {}", result.backend);
+    println!("size     : {}x{}", result.width, result.height);
+    println!("bytes    : {}", result.bytes);
+    Ok(())
 }
 
 fn run_lyrics(prompt: String, out: String, backend_spec: String) -> Result<()> {
