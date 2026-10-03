@@ -75,12 +75,12 @@ enum Cmd {
         #[arg(long, default_value = "stub")]
         backend: String,
     },
-    /// Generate lyrics with verse/chorus/bridge structure (F8)
+    /// Generate lyrics with verse/chorus/bridge structure (F8, not implemented)
     Lyrics {
         /// Theme or title
         prompt: String,
     },
-    /// Generate a character portrait via ComfyUI (F7)
+    /// Generate just a portrait (F7, not implemented; `bundle` covers it)
     Portrait {
         /// Character description
         prompt: String,

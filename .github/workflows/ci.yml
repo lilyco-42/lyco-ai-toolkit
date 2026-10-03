@@ -32,8 +32,14 @@ jobs:
           set -euo pipefail
           ./target/debug/lyco-cli --version
           ./target/debug/lyco-cli --help
-          if ./target/debug/lyco-cli bundle --prompt x; then
-            echo 'scaffold subcommands must fail fast until implemented'
+          # Subcommands with no implementation yet must still fail fast,
+          # so a green pipeline can never imply an asset was produced.
+          if ./target/debug/lyco-cli lyrics --prompt x; then
+            echo 'unimplemented subcommands must fail fast'
+            exit 1
+          fi
+          if ./target/debug/lyco-cli portrait --prompt x; then
+            echo 'unimplemented subcommands must fail fast'
             exit 1
           fi
 
