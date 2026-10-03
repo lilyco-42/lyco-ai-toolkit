@@ -141,10 +141,14 @@ impl Section {
     }
 
     /// The marker as it is written back out, e.g. Verse 1.
+    ///
+    /// An unrecognised marker is written back verbatim, so a sheet we did not
+    /// fully understand still survives a parse/render round trip unchanged.
     pub fn marker(&self) -> String {
-        match &self.label {
-            Some(label) => format!("{} {label}", self.kind.marker()),
-            None => self.kind.marker().to_string(),
+        match (&self.kind, &self.label) {
+            (SectionKind::Other, Some(raw)) => raw.clone(),
+            (_, Some(label)) => format!("{} {label}", self.kind.marker()),
+            (_, None) => self.kind.marker().to_string(),
         }
     }
 }
@@ -248,7 +252,7 @@ impl Lyrics {
                     message: format!("section {} [{}] has no lines", i + 1, section.marker()),
                 });
             }
-            if section.kind == SectionKind::Other && section.label.is_none() {
+            if section.kind == SectionKind::Other {
                 issues.push(Issue {
                     severity: Severity::Warn,
                     code: "unknown-marker",
@@ -360,8 +364,13 @@ mod tests {
     fn keeps_an_unrecognised_marker_instead_of_dropping_it() {
         let lyrics = Lyrics::parse("[Screaming]\nhey\n").expect("parse");
         assert_eq!(lyrics.sections[0].kind, SectionKind::Other);
-        assert_eq!(lyrics.sections[0].label.as_deref(), Some("screaming"));
-        assert!(lyrics.ok());
+        assert_eq!(lyrics.sections[0].label.as_deref(), Some("Screaming"));
+        assert!(lyrics.ok(), "only a warning: {:?}", lyrics.validate());
+
+        // The original spelling must survive, not become [Other screaming].
+        let rendered = lyrics.render();
+        assert!(rendered.contains("[Screaming]"), "{rendered}");
+        assert_eq!(Lyrics::parse(&rendered).expect("re-parse"), lyrics);
     }
 
     #[test]
