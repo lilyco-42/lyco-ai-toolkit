@@ -147,10 +147,10 @@ pub fn decode(bytes: &[u8]) -> Result<DecodedWav, WavError> {
         return Err(WavError::Unsupported);
     }
     let raw = data.ok_or(WavError::Unsupported)?;
-    let samples = raw
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
-        .collect();
+    // as_chunks is the stable const-generic form clippy prefers; nothing is
+    // lost here because a trailing odd byte cannot form a sample anyway.
+    let (pairs, _) = raw.as_chunks::<2>();
+    let samples = pairs.iter().map(|c| i16::from_le_bytes(*c)).collect();
     Ok(DecodedWav {
         samples,
         channels,
