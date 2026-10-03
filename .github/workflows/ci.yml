@@ -98,6 +98,13 @@ jobs:
           ./target/debug/lyco-cli bsm glb-info "$d/model.glb" | tee "$d/glb.txt"
           grep -q '3 vertices, 1 triangles' "$d/glb.txt"
 
+          # F3: convert that GLB into Bedrock geometry plus a texture
+          ./target/debug/lyco-cli bsm from-glb "$d/model.glb" \
+            --out "$d/converted.geo.json" --texture "$d/converted.png" --resolution 16
+          ./target/debug/lyco-cli bsm validate "$d/converted.geo.json"
+          python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(24); print(*struct.unpack('>II', d[16:24]))" "$d/converted.png" | tee "$d/tex.txt"
+          grep -qE '^[0-9]+ [0-9]+$' "$d/tex.txt"
+
 
       # Proves F6 end to end, and cross-checks our WAV writer against an
       # independent decoder (Python's stdlib wave module).

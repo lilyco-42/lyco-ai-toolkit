@@ -16,7 +16,6 @@
 //! 32 units tall: legs 0..12, body 12..24, head 24..32.
 
 use crate::bedrock::{Bone, Cube, Description, Geometry, GeometryFile};
-use crate::glb::Glb;
 use lyco_mc_skin::{part_box, ArmModel, Layer, Part};
 
 /// Height of a player model in model units.
@@ -157,22 +156,9 @@ pub fn player_file(identifier: &str, arm: ArmModel) -> GeometryFile {
     GeometryFile::new(player_geometry(identifier, arm))
 }
 
-/// Placeholder for F3: turn a decoded GLB mesh into Bedrock boxes.
-///
-/// Not implemented. Converting a triangle soup into axis-aligned boxes is
-/// voxelisation plus box fitting, and it is the open algorithmic problem in
-/// this crate - so it fails loudly rather than returning something wrong.
-pub fn boxes_from_glb(_glb: &Glb) -> anyhow::Result<Geometry> {
-    anyhow::bail!(
-        "GLB to Bedrock geometry is not implemented yet: it needs voxelisation \
-         and box fitting, tracked as S2d in _RESEARCH/04-validation-checklist.md"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::glb::Gltf;
     use lyco_mc_skin::Face;
 
     #[test]
@@ -327,18 +313,5 @@ mod tests {
         assert_eq!(file, again);
         assert!(text.contains("geometry.lyco_player"));
         assert!(text.contains("right_arm"));
-    }
-
-    #[test]
-    fn glb_conversion_fails_loudly_instead_of_guessing() {
-        // An empty but structurally valid Glb is enough: the point is that the
-        // unimplemented conversion must refuse rather than invent boxes.
-        let glb = Glb {
-            gltf: Gltf::default(),
-            bin: Vec::new(),
-            version: 2,
-        };
-        let err = boxes_from_glb(&glb).unwrap_err();
-        assert!(err.to_string().contains("not implemented"), "{err}");
     }
 }

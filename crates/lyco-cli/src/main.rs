@@ -20,7 +20,9 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use lyco_audio::{backend_from_spec, BgmRequest};
-use lyco_bsm::{glb::Primitive, player_file, GeometryFile, Glb, Problem};
+use lyco_bsm::{
+    glb::Primitive, player_file, convert_glb, ConvertConfig, GeometryFile, Glb, Problem,
+};
 use lyco_bundle::{Artifact, BundleRequest};
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
 use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
@@ -185,6 +187,23 @@ enum BsmCmd {
     GlbInfo {
         /// GLB file to inspect
         path: String,
+    },
+    /// Convert a GLB mesh into Bedrock geometry, with a generated texture (F3)
+    FromGlb {
+        /// GLB file to convert
+        path: String,
+        /// Output .geo.json path
+        #[arg(long, short, default_value = "out/model.geo.json")]
+        out: String,
+        /// Output texture PNG path; empty string skips writing it
+        #[arg(long, default_value = "out/model.png")]
+        texture: String,
+        /// Voxels along the model's longest axis
+        #[arg(long, default_value_t = 24)]
+        resolution: u32,
+        /// Geometry identifier written into the file
+        #[arg(long, default_value = "geometry.lyco_converted")]
+        identifier: String,
     },
 }
 
@@ -439,6 +458,35 @@ fn run_bsm(cmd: BsmCmd) -> Result<()> {
                     );
                 }
             }
+            Ok(())
+        }
+
+        BsmCmd::FromGlb {
+            path,
+            out,
+            texture,
+            resolution,
+            identifier,
+        } => {
+            let bytes = std::fs::read(&path)?;
+            let glb = Glb::parse(&bytes).with_context(|| format!("cannot read {path}"))?;
+            let cfg = ConvertConfig {
+                resolution,
+                identifier,
+                ..Default::default()
+            };
+            let conversion = convert_glb(&glb, &cfg)?;
+            write_text(&out, &conversion.geometry.to_json()?)?;
+            if !texture.is_empty() {
+                conversion.save_texture(&texture)?;
+            }
+            println!("wrote {out}");
+            if !texture.is_empty() {
+                println!("wrote {texture}");
+            }
+            println!("triangles: {}", conversion.triangles);
+            println!("voxels   : {}", conversion.voxels);
+            println!("boxes    : {}", conversion.boxes);
             Ok(())
         }
 
