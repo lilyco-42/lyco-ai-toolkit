@@ -229,7 +229,8 @@ jobs:
       - name: kaggle kernel render smoke test
         run: |
           set -euo pipefail
-          d="$(mktemp -d)"
+          rm -rf out/kernel
+          d=out/kernel
           ./target/debug/lyco-cli kaggle render \
             --owner lilyco4242 --slug lyco-skin-gen --seeds 7,42 --out "$d"
           test -f "$d/lyco-skin-gen.ipynb"
