@@ -129,10 +129,33 @@ fn placement(arm: ArmModel) -> [(Part, u32, u32); 6] {
     ]
 }
 
+/// Source-over compositing, the way the game stacks the two layers.
+fn over(src: [u8; 4], dst: [u8; 4]) -> [u8; 4] {
+    if src[3] == 0 {
+        return dst;
+    }
+    if src[3] == 255 || dst[3] == 0 {
+        return src;
+    }
+    let a = src[3] as f32 / 255.0;
+    let mix = |s: u8, d: u8| (s as f32 * a + d as f32 * (1.0 - a)).round() as u8;
+    [
+        mix(src[0], dst[0]),
+        mix(src[1], dst[1]),
+        mix(src[2], dst[2]),
+        255,
+    ]
+}
+
 /// Compose one side of the character onto a flat canvas.
 ///
 /// A preview, not a renderer: it blits faces flat with no perspective, which is
 /// exactly enough to tell a good skin from a white blob.
+///
+/// The overlay is drawn over the base, because that is what the game does. An
+/// earlier version blitted only the base layer, which made the preview incapable
+/// of showing the one failure it exists to catch: a model that filled the whole
+/// overlay with white looked perfectly fine in the preview and terrible in game.
 pub fn character_view(skin: &Skin, arm: ArmModel, side: Side) -> View {
     let face = match side {
         Side::Front => Face::Front,
@@ -141,14 +164,17 @@ pub fn character_view(skin: &Skin, arm: ArmModel, side: Side) -> View {
 
     let mut view = View::empty();
     for (part, dx, dy) in placement(arm) {
-        let src = part_box(part, Layer::Base, arm).face(face);
-        for y in 0..src.h {
-            for x in 0..src.w {
-                let px = skin.pixel(src.x + x, src.y + y);
-                if px[3] == 0 {
-                    continue;
+        for layer in [Layer::Base, Layer::Overlay] {
+            let src = part_box(part, layer, arm).face(face);
+            for y in 0..src.h {
+                for x in 0..src.w {
+                    let px = skin.pixel(src.x + x, src.y + y);
+                    if px[3] == 0 {
+                        continue;
+                    }
+                    let behind = view.pixel(dx + x, dy + y);
+                    view.set(dx + x, dy + y, over(px, behind));
                 }
-                view.set(dx + x, dy + y, px);
             }
         }
     }
@@ -256,6 +282,42 @@ mod tests {
         // Only the back faces were painted, so the front view is empty.
         let front = character_view(&skin, ArmModel::Classic, Side::Front);
         assert_eq!(front.opaque_count(), 0);
+    }
+
+    /// The failure this whole pipeline exists to catch, and which the preview
+    /// could not show while it only drew the base layer.
+    #[test]
+    fn a_white_overlay_covers_the_character_and_repair_uncovers_it_again() {
+        let mut skin = Skin::template(ArmModel::Classic);
+        for part in Part::ALL {
+            let rect = part_box(part, Layer::Overlay, ArmModel::Classic).bounds();
+            for y in rect.y..rect.bottom() {
+                for x in rect.x..rect.right() {
+                    skin.set_pixel(x, y, [255, 255, 255, 255]);
+                }
+            }
+        }
+
+        let covered = character_view(&skin, ArmModel::Classic, Side::Front);
+        assert_eq!(
+            covered.pixel(4, 0),
+            [255, 255, 255, 255],
+            "the white overlay must win, or the preview is lying"
+        );
+
+        let mut repaired = skin.clone();
+        crate::overlay::fix_white_overlay(
+            &mut repaired,
+            ArmModel::Classic,
+            &crate::overlay::OverlayFixConfig::default(),
+        )
+        .expect("fix");
+        let after = character_view(&repaired, ArmModel::Classic, Side::Front);
+        assert_ne!(
+            after.pixel(4, 0),
+            [255, 255, 255, 255],
+            "after repair the base art shows through"
+        );
     }
 
     #[test]

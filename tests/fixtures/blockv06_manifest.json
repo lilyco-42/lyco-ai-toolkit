@@ -1,0 +1,26 @@
+{
+  "model": "AliceKJ/BLOCKv0.6",
+  "seeds_requested": [
+    7,
+    42
+  ],
+  "seeds_produced": [
+    7,
+    42
+  ],
+  "blank_seeds": [],
+  "results": [
+    {
+      "seed": 7,
+      "file": "skin_seed7.png",
+      "seconds": 84.8,
+      "colors": 12206
+    },
+    {
+      "seed": 42,
+      "file": "skin_seed42.png",
+      "seconds": 96.8,
+      "colors": 12294
+    }
+  ]
+}

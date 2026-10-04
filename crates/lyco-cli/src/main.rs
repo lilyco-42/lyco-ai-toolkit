@@ -27,8 +27,8 @@ use lyco_bundle::{Artifact, BundleRequest};
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
 use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{
-    apply_palette, distinct_opaque_colors, fix_white_overlay, median_cut, ArmModel,
-    OverlayFixConfig, Report, Severity, Skin,
+    apply_palette, character_view, distinct_opaque_colors, fix_white_overlay, median_cut, ArmModel,
+    OverlayFixConfig, Report, Severity, Side, Skin,
 };
 use lyco_mcp::Registry;
 
@@ -238,6 +238,20 @@ enum SkinCmd {
         /// Below this percentage surviving, the rectangle is cleared entirely
         #[arg(long, default_value_t = 12)]
         keep_percent: u32,
+    },
+    /// Compose a skin into a flat front view a human can judge
+    Preview {
+        /// Input skin PNG
+        path: String,
+        /// Output PNG
+        #[arg(long, short, default_value = "out/skin-preview.png")]
+        out: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// Magnification, so a 16x32 character is readable
+        #[arg(long, default_value_t = 8)]
+        scale: u32,
     },
     /// Generate a skin from a character prompt (needs an image backend)
     Generate {
@@ -537,6 +551,30 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
                 );
             }
             println!("total cleared: {} px", report.total_cleared());
+            Ok(())
+        }
+
+        SkinCmd::Preview {
+            path,
+            out,
+            arm,
+            scale,
+        } => {
+            let arm = parse_arm(&arm)?;
+            let skin = Skin::load(&path)?;
+            let validation = skin.validate();
+            if !validation.ok() {
+                eprintln!("warning: {path} does not validate; the preview may be misleading");
+            }
+            let view = character_view(&skin, arm, Side::Front).scaled(scale);
+            view.save(&out)?;
+            println!(
+                "wrote {out} ({}x{}) from {}x{} skin",
+                view.width,
+                view.height,
+                skin.width(),
+                skin.height()
+            );
             Ok(())
         }
 

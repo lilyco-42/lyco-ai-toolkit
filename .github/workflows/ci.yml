@@ -267,5 +267,47 @@ jobs:
           path: out/kernel/
           if-no-files-found: error
 
+      # The real thing. tests/fixtures/blockv06_seed7.png is what BLOCKv0.6
+      # actually returned from a Kaggle T4: RGB with no alpha, so the model's
+      # white background sits in every overlay rectangle. Repair must clear
+      # that and leave the character alone.
+      - name: overlay repair on real generated skins
+        run: |
+          set -euo pipefail
+          rm -rf out/fixtures && mkdir -p out/fixtures
+
+          ./target/debug/lyco-cli skin info tests/fixtures/blockv06_seed7.png > out/fixtures/before.txt
+          grep -q 'opaque pixels  : 4096' out/fixtures/before.txt
+
+          for seed in 7 42; do
+            src="tests/fixtures/blockv06_seed$seed.png"
+            ./target/debug/lyco-cli skin fix-overlay "$src" \
+              --out "out/fixtures/seed${seed}_fixed.png" > "out/fixtures/seed${seed}_repair.txt"
+
+            cleared=$(sed -n 's/^total cleared: \([0-9]*\) px$/\1/p' "out/fixtures/seed${seed}_repair.txt")
+            test -n "$cleared"
+            test "$cleared" -ge 1400
+            test "$cleared" -le 1920
+
+            ./target/debug/lyco-cli skin info "out/fixtures/seed${seed}_fixed.png" > "out/fixtures/seed${seed}_after.txt"
+            after=$(sed -n 's/^opaque pixels *: *\([0-9]*\)$/\1/p' "out/fixtures/seed${seed}_after.txt")
+            test "$after" -eq $((4096 - cleared))
+            test "$after" -ge 2400
+
+            ./target/debug/lyco-cli skin validate "out/fixtures/seed${seed}_fixed.png"
+            ./target/debug/lyco-cli skin preview "out/fixtures/seed${seed}_fixed.png" \
+              --out "out/fixtures/seed${seed}_front.png" --scale 8
+            ./target/debug/lyco-cli skin preview "$src" \
+              --out "out/fixtures/seed${seed}_raw_front.png" --scale 8
+            echo "seed $seed: cleared $cleared, $after opaque remain"
+          done
+
+      - name: upload the repaired previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyco-repaired-skins
+          path: out/fixtures/
+          if-no-files-found: error
+
       - name: fmt
         run: cargo fmt --all -- --check
