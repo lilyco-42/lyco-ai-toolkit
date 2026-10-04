@@ -15,7 +15,7 @@
 
 use anyhow::{bail, Result};
 
-use crate::format::{part_box, ArmModel, Layer, Part, Rect, SKIN_HEIGHT, SKIN_WIDTH};
+use crate::format::{part_box, ArmModel, Face, Layer, Part, Rect, SKIN_HEIGHT, SKIN_WIDTH};
 use crate::skin::Skin;
 
 /// A channel at or above this is treated as background white.
@@ -93,6 +93,21 @@ fn clear_rect(skin: &mut Skin, rect: Rect) {
     }
 }
 
+/// True when every rendered base-layer face is still fully opaque.
+///
+/// Deliberately checks the six faces rather than the unwrap's bounding
+/// rectangle. A box unwrap leaves two d by d squares unused at the top
+/// corners, which no face ever samples, so demanding opacity there would
+/// flag perfectly good skins - including this crate's own template.
+fn base_layer_intact(skin: &Skin, arm: ArmModel) -> bool {
+    Part::ALL.iter().all(|part| {
+        let b = part_box(*part, Layer::Base, arm);
+        Face::ALL
+            .iter()
+            .all(|f| rect_fully_opaque(skin, b.face(*f)))
+    })
+}
+
 fn rect_fully_opaque(skin: &Skin, rect: Rect) -> bool {
     for y in rect.y..rect.bottom() {
         for x in rect.x..rect.right() {
@@ -164,9 +179,7 @@ pub fn fix_white_overlay(
         });
     }
 
-    let first_layer_intact = Part::ALL
-        .iter()
-        .all(|p| rect_fully_opaque(skin, part_box(*p, Layer::Base, arm).bounds()));
+    let first_layer_intact = base_layer_intact(skin, arm);
 
     Ok(OverlayFixReport {
         outcomes,
@@ -342,6 +355,34 @@ mod tests {
         let report = fix_white_overlay(&mut below, ArmModel::Classic, &OverlayFixConfig::default())
             .expect("fix");
         assert_eq!(report.total_cleared(), 0);
+    }
+
+    /// Regression guard for the bug this check originally had: the unwrap's
+    /// unused corner squares are transparent in a fresh template, and treating
+    /// that as base-layer damage made three tests fail.
+    #[test]
+    fn unused_unwrap_corners_do_not_count_as_damage() {
+        let b = part_box(Part::Body, Layer::Base, ArmModel::Classic);
+        let bounds = b.bounds();
+        let face_area: u32 = Face::ALL.iter().map(|f| b.face(*f).area()).sum();
+        assert!(
+            face_area < bounds.area(),
+            "the unwrap must have unused corners for this test to mean anything"
+        );
+
+        let mut skin = Skin::template(ArmModel::Classic);
+        let corner = Rect::new(bounds.x, bounds.y, b.d, b.d);
+        assert!(
+            skin.rect_is_transparent(corner),
+            "the template leaves the unwrap corner clear"
+        );
+
+        let report = fix_white_overlay(&mut skin, ArmModel::Classic, &OverlayFixConfig::default())
+            .expect("fix");
+        assert!(
+            report.first_layer_intact,
+            "a clear corner is not base-layer damage"
+        );
     }
 
     #[test]
