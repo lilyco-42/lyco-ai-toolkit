@@ -4,17 +4,24 @@
 //!   * `format`  - the 64x64 box-UV unwrap and the 12 part/layer anchors
 //!   * `palette` - deterministic median-cut quantization to a small palette
 //!   * `skin`    - load/save/template plus structural validation
+//!   * `overlay` - repair the second layer of a model-generated skin
 //!
-//! Image *generation* is deliberately not here. A diffusion backend is a
-//! subprocess boundary (ComfyUI) that may not exist on the build machine, so
-//! this crate stays pure and testable offline.
+//! Image *generation* is deliberately not here. Inference happens elsewhere -
+//! nowadays on a free Kaggle GPU - and arrives as a 64x64 PNG. Everything this
+//! crate does is the part that needs no GPU and can therefore be unit tested:
+//! the UV table, the palette, the validation, and the overlay repair.
 
 pub mod format;
+pub mod overlay;
 pub mod palette;
 pub mod skin;
 
 pub use format::{
     all_boxes, part_box, ArmModel, BoxUv, Face, Layer, Part, Rect, SKIN_HEIGHT, SKIN_WIDTH,
+};
+pub use overlay::{
+    fix_white_overlay, OverlayFixConfig, OverlayFixReport, PartOutcome, DEFAULT_KEEP_PERCENT,
+    DEFAULT_WHITE_THRESHOLD,
 };
 pub use palette::{
     apply as apply_palette, distinct_opaque_colors, median_cut, Palette, Rgb, DEFAULT_PALETTE_SIZE,

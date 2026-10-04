@@ -27,7 +27,8 @@ use lyco_bundle::{Artifact, BundleRequest};
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
 use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{
-    apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
+    apply_palette, distinct_opaque_colors, fix_white_overlay, median_cut, ArmModel,
+    OverlayFixConfig, Report, Severity, Skin,
 };
 use lyco_mcp::Registry;
 
@@ -148,6 +149,23 @@ enum SkinCmd {
         /// Maximum palette entries
         #[arg(long, default_value_t = 8)]
         colors: usize,
+    },
+    /// Clear a model's white background out of the overlay layer
+    FixOverlay {
+        /// Input skin PNG, typically straight from a model
+        path: String,
+        /// Output skin PNG
+        #[arg(long, short, default_value = "out/skin-fixed.png")]
+        out: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// A channel at or above this counts as background white
+        #[arg(long, default_value_t = 235)]
+        threshold: u8,
+        /// Below this percentage surviving, the rectangle is cleared entirely
+        #[arg(long, default_value_t = 12)]
+        keep_percent: u32,
     },
     /// Generate a skin from a character prompt (needs an image backend)
     Generate {
@@ -384,6 +402,42 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
                 palette.len()
             );
             println!("palette   : {}", palette.as_hex().join(" "));
+            Ok(())
+        }
+
+        SkinCmd::FixOverlay {
+            path,
+            out,
+            arm,
+            threshold,
+            keep_percent,
+        } => {
+            let arm = parse_arm(&arm)?;
+            let mut skin = Skin::load(&path)?;
+            let cfg = OverlayFixConfig {
+                white_threshold: threshold,
+                keep_percent,
+            };
+            let report = fix_white_overlay(&mut skin, arm, &cfg)?;
+            if !report.first_layer_intact {
+                bail!("the base layer lost opacity; refusing to save a broken skin");
+            }
+            skin.save(&out)?;
+            println!("wrote {out}");
+            for o in &report.outcomes {
+                let verdict = if o.cleared_entirely {
+                    "cleared"
+                } else {
+                    "kept"
+                };
+                println!(
+                    "  {:<10} {:>4} px cleared, {:>4} kept  [{verdict}]",
+                    o.part.name(),
+                    o.cleared,
+                    o.kept
+                );
+            }
+            println!("total cleared: {} px", report.total_cleared());
             Ok(())
         }
 

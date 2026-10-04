@@ -62,6 +62,24 @@ jobs:
           ./target/debug/lyco-cli skin quantize "$d/skin.png" --out "$d/q.png" --colors 6
           ./target/debug/lyco-cli skin validate --json "$d/q.png"
 
+          # Overlay repair. A solid-white skin has every overlay rectangle
+          # filled, which is what a model returns when it learned that
+          # backgrounds are white. 64*64 = 4096 pixels and the six overlay
+          # rectangles cover 1920 of them, so 2176 must survive.
+          python3 scripts/make-solid-skin.py "$d/white.png"
+          ./target/debug/lyco-cli skin info "$d/white.png" > "$d/white-info.txt"
+          grep -q 'opaque pixels  : 4096' "$d/white-info.txt"
+
+          ./target/debug/lyco-cli skin fix-overlay "$d/white.png" --out "$d/fixed.png"
+          ./target/debug/lyco-cli skin info "$d/fixed.png" > "$d/fixed-info.txt"
+          grep -q 'opaque pixels  : 2176' "$d/fixed-info.txt"
+          ./target/debug/lyco-cli skin validate "$d/fixed.png"
+
+          # a genuine dark overlay must be left untouched
+          python3 scripts/make-solid-skin.py "$d/dark.png" 30 40 90
+          ./target/debug/lyco-cli skin fix-overlay "$d/dark.png" --out "$d/dark-fixed.png" > "$d/dark.txt"
+          grep -q 'total cleared: 0 px' "$d/dark.txt"
+
           # garbage input must be rejected with a non-zero exit
           head -c 256 /dev/urandom > "$d/bad.png"
           if ./target/debug/lyco-cli skin validate "$d/bad.png" 2>/dev/null; then
