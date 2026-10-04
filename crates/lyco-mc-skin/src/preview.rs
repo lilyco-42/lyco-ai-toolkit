@@ -9,6 +9,8 @@
 //! generated notebook contain no UV table at all - the knowledge lives in
 //! [`crate::format`] once, and the Kaggle side only does inference.
 
+use anyhow::{Context, Result};
+
 use crate::format::{part_box, ArmModel, Face, Layer, Part};
 use crate::skin::Skin;
 
@@ -58,6 +60,44 @@ impl View {
 
     pub fn raw(&self) -> &[[u8; 4]] {
         &self.pixels
+    }
+
+    /// The view as RGBA bytes, row major.
+    pub fn to_rgba_bytes(&self) -> Vec<u8> {
+        self.pixels.iter().flat_map(|p| p.iter().copied()).collect()
+    }
+
+    /// Nearest-neighbour magnification. A 16x32 character is hard to judge at
+    /// its real size, and smoothing would hide exactly the pixel detail this
+    /// preview exists to show.
+    pub fn scaled(&self, factor: u32) -> View {
+        let factor = factor.max(1);
+        let mut out = View {
+            width: self.width * factor,
+            height: self.height * factor,
+            pixels: vec![[0, 0, 0, 0]; (self.width * factor * self.height * factor) as usize],
+        };
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let px = self.pixel(x, y);
+                for dy in 0..factor {
+                    for dx in 0..factor {
+                        out.set(x * factor + dx, y * factor + dy, px);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Write the view to a PNG.
+    pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
+        let path = path.as_ref();
+        let buffer = image::RgbaImage::from_raw(self.width, self.height, self.to_rgba_bytes())
+            .ok_or_else(|| anyhow::anyhow!("view buffer does not match its dimensions"))?;
+        buffer
+            .save(path)
+            .with_context(|| format!("cannot write {}", path.display()))
     }
 
     /// Flip left to right. Looking at someone from behind swaps their sides.

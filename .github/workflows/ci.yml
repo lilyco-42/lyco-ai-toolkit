@@ -222,5 +222,41 @@ jobs:
           ./target/debug/lyco-cli skin validate "$d/skin.png"
 
 
+      # Kaggle kernel render. Uploads nothing, so it runs in CI: it proves
+      # the generated notebook is real nbformat, that the metadata names
+      # the notebook sitting beside it, and that the atlas layout has not
+      # been copied into the notebook.
+      - name: kaggle kernel render smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          ./target/debug/lyco-cli kaggle render \
+            --owner lilyco4242 --slug lyco-skin-gen --seeds 7,42 --out "$d"
+          test -f "$d/lyco-skin-gen.ipynb"
+          test -f "$d/kernel-metadata.json"
+
+          python3 - "$d" <<'PY'
+          import json, os, sys
+
+          d = sys.argv[1]
+          nb = json.load(open(os.path.join(d, "lyco-skin-gen.ipynb")))
+          assert nb["nbformat"] == 4, nb["nbformat"]
+          assert len(nb["cells"]) >= 5, len(nb["cells"])
+
+          meta = json.load(open(os.path.join(d, "kernel-metadata.json")))
+          assert meta["code_file"] == "lyco-skin-gen.ipynb"
+          assert meta["enable_gpu"] is True
+          assert meta["enable_internet"] is True, "weights come from Hugging Face"
+
+          src = "".join("".join(c["source"]) for c in nb["cells"])
+          assert "GUIDANCE = 4" in src, "the guidance scale must survive"
+          assert "resize((512, 512))" in src, "the resize must survive"
+          assert "raise RuntimeError" in src, "a blank run must fail loudly"
+          assert "OVERLAY_RECTS" not in src, "the UV table must not be duplicated"
+          assert "fix_white_overlay" not in src, "repair belongs to lyco-mc-skin"
+          print("kernel render verified")
+          PY
+
+
       - name: fmt
         run: cargo fmt --all -- --check

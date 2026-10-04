@@ -32,6 +32,8 @@ use lyco_mc_skin::{
 };
 use lyco_mcp::Registry;
 
+mod kaggle;
+
 #[derive(Parser, Debug)]
 #[command(name = "lyco-cli", about = "lyco AI asset studio", version)]
 struct Cli {
@@ -101,6 +103,11 @@ enum Cmd {
     },
     /// Run the MCP server on stdin/stdout, for an agent to drive (F9)
     Mcp,
+    /// Run a generation job on Kaggle's free GPUs (F1)
+    Kaggle {
+        #[command(subcommand)]
+        cmd: KaggleCmd,
+    },
     /// Generate just a portrait (F7)
     Portrait {
         /// Character description
@@ -112,6 +119,71 @@ enum Cmd {
         /// 'stub' for the offline placeholder, or a generator command line
         #[arg(long, default_value = "stub")]
         backend: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum KaggleCmd {
+    /// Write the kernel folder locally; uploads nothing
+    Render {
+        /// Kaggle owner, for example lilyco4242
+        #[arg(long)]
+        owner: String,
+        /// Kernel slug, for example lyco-skin-gen
+        #[arg(long)]
+        slug: String,
+        /// Seeds to generate, comma separated
+        #[arg(long, default_value = "7")]
+        seeds: String,
+        /// Folder to write the kernel into
+        #[arg(long, short, default_value = "out/kernel")]
+        out: String,
+    },
+    /// Upload the folder and start a run
+    Push {
+        /// Folder holding the notebook and kernel-metadata.json
+        #[arg(long, short, default_value = "out/kernel")]
+        dir: String,
+        /// Kaggle-imposed run time limit in seconds
+        #[arg(long)]
+        timeout: Option<u32>,
+    },
+    /// Report what a run is doing
+    Status {
+        /// Kernel reference, owner/slug
+        kernel: String,
+    },
+    /// Download a finished run's output
+    Fetch {
+        /// Kernel reference, owner/slug
+        kernel: String,
+        /// Where to put the downloaded files
+        #[arg(long, short, default_value = "out/kaggle-output")]
+        out: String,
+    },
+    /// The whole loop: render, push, wait, fetch, then repair and preview
+    Run {
+        /// Kaggle owner
+        #[arg(long)]
+        owner: String,
+        /// Kernel slug
+        #[arg(long)]
+        slug: String,
+        /// Seeds to generate, comma separated
+        #[arg(long, default_value = "7")]
+        seeds: String,
+        /// Working folder
+        #[arg(long, short, default_value = "out/kaggle")]
+        out: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// Seconds between status polls
+        #[arg(long, default_value_t = 30)]
+        poll_secs: u64,
+        /// Give up after this many polls
+        #[arg(long, default_value_t = 60)]
+        max_polls: u32,
     },
 }
 
@@ -276,6 +348,33 @@ fn main() -> Result<()> {
             backend,
         } => run_portrait(prompt, out, backend),
         Cmd::Mcp => lyco_mcp::serve_stdio(&Registry::standard()),
+        Cmd::Kaggle { cmd } => run_kaggle(cmd),
+    }
+}
+
+fn run_kaggle(cmd: KaggleCmd) -> Result<()> {
+    match cmd {
+        KaggleCmd::Render {
+            owner,
+            slug,
+            seeds,
+            out,
+        } => kaggle::render(&owner, &slug, &seeds, &out),
+        KaggleCmd::Push { dir, timeout } => kaggle::push(&dir, timeout),
+        KaggleCmd::Status { kernel } => kaggle::status(&kernel),
+        KaggleCmd::Fetch { kernel, out } => kaggle::fetch(&kernel, &out),
+        KaggleCmd::Run {
+            owner,
+            slug,
+            seeds,
+            out,
+            arm,
+            poll_secs,
+            max_polls,
+        } => {
+            let arm = parse_arm(&arm)?;
+            kaggle::run(&owner, &slug, &seeds, &out, arm, poll_secs, max_polls)
+        }
     }
 }
 
