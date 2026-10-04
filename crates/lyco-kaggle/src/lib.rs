@@ -17,7 +17,11 @@
 pub mod metadata;
 pub mod notebook;
 pub mod runner;
+pub mod skin;
 
 pub use metadata::{KernelMetadata, T4};
 pub use notebook::{Cell, Notebook};
 pub use runner::{parse_status, wait_until_terminal, Kaggle, Status};
+pub use skin::{
+    SkinKernelConfig, DEFAULT_GUIDANCE, DEFAULT_MODEL, DEFAULT_REFERENCE, DEFAULT_STEPS,
+};
