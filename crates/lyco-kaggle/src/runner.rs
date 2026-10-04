@@ -35,6 +35,11 @@ impl Status {
     }
 
     /// True when no further polling can change anything.
+    ///
+    /// `Unknown` counts as terminal on purpose. If Kaggle reports a state this
+    /// build does not recognise, waiting will not teach us what it means, and
+    /// polling until the budget runs out would hang the job instead of
+    /// reporting the state by name so a human can act on it.
     pub fn is_terminal(&self) -> bool {
         !matches!(self, Status::Queued | Status::Running)
     }
@@ -288,7 +293,15 @@ mod tests {
             "finished is not the same as worked"
         );
         assert!(Status::Cancelled.is_terminal());
-        assert!(!Status::Unknown(String::from("X")).is_terminal());
+        // An unrecognised state stops the wait rather than polling for ever,
+        // but it is not a success.
+        let unknown = Status::Unknown(String::from("SOMETHING_NEW"));
+        assert!(
+            unknown.is_terminal(),
+            "waiting will not decode an unknown state"
+        );
+        assert!(!unknown.is_success());
+        assert_eq!(unknown.name(), "SOMETHING_NEW");
     }
 
     #[test]
