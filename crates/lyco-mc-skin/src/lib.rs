@@ -5,15 +5,19 @@
 //!   * `palette` - deterministic median-cut quantization to a small palette
 //!   * `skin`    - load/save/template plus structural validation
 //!   * `overlay` - repair the second layer of a model-generated skin
+//!   * `preview` - compose the front and back of a character for eyeballing
 //!
 //! Image *generation* is deliberately not here. Inference happens elsewhere -
 //! nowadays on a free Kaggle GPU - and arrives as a 64x64 PNG. Everything this
 //! crate does is the part that needs no GPU and can therefore be unit tested:
-//! the UV table, the palette, the validation, and the overlay repair.
+//! the UV table, the palette, the validation, the overlay repair, and the
+//! preview. That is also why the generated Kaggle notebook carries no UV table:
+//! there is only one copy of this knowledge and it is this one.
 
 pub mod format;
 pub mod overlay;
 pub mod palette;
+pub mod preview;
 pub mod skin;
 
 pub use format::{
@@ -26,6 +30,7 @@ pub use overlay::{
 pub use palette::{
     apply as apply_palette, distinct_opaque_colors, median_cut, Palette, Rgb, DEFAULT_PALETTE_SIZE,
 };
+pub use preview::{character_view, Side, View, VIEW_HEIGHT, VIEW_WIDTH};
 pub use skin::{Issue, Report, Severity, Skin};
 
 #[cfg(test)]
