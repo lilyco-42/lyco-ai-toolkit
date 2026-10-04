@@ -187,21 +187,35 @@ mod tests {
         assert_eq!(slim.pixel(12, 8), [0, 0, 0, 0]);
     }
 
+    /// The back view reads the Back faces and mirrors them, because looking at
+    /// someone from behind swaps their sides. It is *not* the front view
+    /// flipped: those are different pixels of the atlas.
     #[test]
-    fn the_back_view_is_the_horizontal_mirror() {
-        let skin = Skin::template(ArmModel::Classic);
-        let front = character_view(&skin, ArmModel::Classic, Side::Front);
-        let back = character_view(&skin, ArmModel::Classic, Side::Back);
-        assert_eq!(front.opaque_count(), back.opaque_count());
-        for y in 0..front.height {
-            for x in 0..front.width {
-                assert_eq!(
-                    back.pixel(x, y),
-                    front.pixel(front.width - 1 - x, y),
-                    "mismatch at {x},{y}"
-                );
+    fn the_back_view_reads_back_faces_and_mirrors_them() {
+        let mut skin = Skin::blank();
+        let back = part_box(Part::Head, Layer::Base, ArmModel::Classic).face(Face::Back);
+        for y in back.y..back.bottom() {
+            for x in back.x..back.right() {
+                skin.set_pixel(x, y, [10, 20, 30, 255]);
             }
         }
+        // A mark on the left column of the source face, so mirroring is visible.
+        for y in back.y..back.bottom() {
+            skin.set_pixel(back.x, y, [200, 0, 0, 255]);
+        }
+
+        let view = character_view(&skin, ArmModel::Classic, Side::Back);
+        // The head sits at x 4..12; source column 0 lands on x 11.
+        assert_eq!(
+            view.pixel(11, 0),
+            [200, 0, 0, 255],
+            "the mark mirrors right"
+        );
+        assert_eq!(view.pixel(4, 0), [10, 20, 30, 255]);
+
+        // Only the back faces were painted, so the front view is empty.
+        let front = character_view(&skin, ArmModel::Classic, Side::Front);
+        assert_eq!(front.opaque_count(), 0);
     }
 
     #[test]
