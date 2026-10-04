@@ -73,11 +73,21 @@ lyco-ai-toolkit/
 3. **需要模型的藏在子进程后面。** 不对 ACE-Step / ComfyUI / 任何 LLM 的 CLI 做假设，
    只约定参数形状，用 `--backend` 指过去。
 
-## 离线 / 在线
+## 生成：Kaggle 免费 GPU
 
-本仓库全部可离线构建与测试（156 个测试）。需要 GPU 的部分（扩散、音频引擎、LLM）
-通过 `--backend '<命令行>'` 接到有显卡的机器上。开发机没有 GPU，所以这些路径目前
-只能以 stub 跑通。
+皮肤生成**真的能跑** —— 不需要本机有显卡：
+
+```bash
+lyco-cli skin generate --backend kaggle --owner <you> --slug lyco-skin-gen --seeds 7,42
+```
+
+它把 Rust 生成的笔记本推到 Kaggle，在免费的 Tesla T4 上跑 `AliceKJ/BLOCKv0.6`，
+轮询到结束，拉回产物，**然后在本机**做 overlay 修复、结构校验和人形预览。
+
+分工是刻意的：**Kaggle 只做它唯一不可替代的事（GPU 推理），UV 知识和修复逻辑归 Rust。**
+生成的笔记本里**没有 UV 表**，CI 会断言这一点。
+
+其余需要模型的部分（音频引擎、图像引擎、LLM）仍是 `--backend '<命令行>'` 子进程边界。
 
 ## 验证
 
@@ -87,7 +97,9 @@ lyco-ai-toolkit/
 
 ## 已知缺口
 
-- 真实 ACE-Step / ComfyUI / 混元 3D / LLM 接入需要 GPU 机器
+- 真实 ACE-Step / ComfyUI / 混元 3D / LLM 接入需要 GPU 机器（皮肤走 Kaggle 已通）
+- `keep-percent=12%` 这个启发式对某些 seed 会整体清空残留很少的 overlay 矩形，
+  可能丢掉真实衣物细节；需要人眼判断是否调低
 - BGM 目前是 WAV；mp3 转码需要 ffmpeg
 - 转换出的模型贴图是「每盒平均色」，不是对原网格纹理的 UV 重映射
 - 模型能否被 Blockbench 导入**未经人工验证**（自动化只能验到 schema 层）
