@@ -165,6 +165,7 @@ CI 断言 `('model', False)` 与 `('portrait', True)` 同时成立。
 | F8 歌词 | lyco-lyrics | 20 | 标记结构断言 + 只吐散文的写入器必须被拒 |
 | S5 bundle | lyco-bundle | 6 | 五产物齐备 + 直读 PNG 头核对尺寸 |
 | F9 MCP server | lyco-mcp | 12 | **真实 stdio MCP 会话**（4 请求 / 4 回复） |
+| F1 云端生成 | lyco-kaggle | 28 | 离线渲染校验 + **真实模型的产物做夹具回归** |
 | **合计** | | **156** | clippy -D warnings + fmt + build + 6 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
@@ -222,3 +223,71 @@ lyco-cli portrait  # a single portrait
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | lyco-cli mcp
 ```
+## F1 云端生成 — Kaggle 免费 GPU ✅ **已跑通**
+
+这是补上「只会造地基建不出房子」的那一步：**真的生成了东西。**
+
+### 怎么跑
+
+```bash
+lyco-cli skin generate --backend kaggle --owner <you> --slug lyco-skin-gen --seeds 7,42
+# 或分步
+lyco-cli kaggle render --owner <you> --slug lyco-skin-gen --seeds 7,42 --out out/kernel
+lyco-cli kaggle push   --dir out/kernel
+lyco-cli kaggle status <you>/lyco-skin-gen
+lyco-cli kaggle fetch  <you>/lyco-skin-gen --out out/kaggle-output
+```
+
+### 真实运行记录
+
+| 项 | 值 |
+|---|---|
+| kernel | `lilyco4242/lyco-skin-generator`（v1） |
+| GPU | Tesla T4 15.6 GB |
+| 模型 | `AliceKJ/BLOCKv0.6`（Flux2Klein 4B，CPU offload，加载 127s） |
+| 配置 | `float16` / `steps=30` / `guidance=4.0` / 参考图 resize 512 |
+| seed 7 | 84.8s，12206 色，`ok` |
+| seed 42 | 96.8s，12294 色，`ok` |
+| 空图 | 0 |
+| 结果 | `KernelWorkerStatus.COMPLETE` |
+
+两张真实皮肤已作为夹具提交：`tests/fixtures/blockv06_seed{7,42}.png`。
+
+### 白块问题：真实复现并量化
+
+模型输出是 `mode=RGB`、`alpha_min=alpha_max=255` —— **根本没有 alpha 通道**。
+于是它学到的白色背景**全部留在了第二层**：
+
+| 部位 | seed 7 白像素 | seed 42 白像素 | 面积 |
+|---|---|---|---|
+| hat | 338 | 335 | 512 |
+| jacket | 308 | 345 | 384 |
+| rSleeve | 195 | 229 | 256 |
+| lSleeve | 211 | 232 | 256 |
+| rPant | 238 | 236 | 256 |
+| lPant | 238 | 236 | 256 |
+| **合计** | **1528 / 1920** | **1613 / 1920** | |
+
+**80–84% 的外套层是白底。** 原样发布，角色在游戏里就是一坨白块 —— 修复前后的预览
+对比在 CI 的 `lyco-repaired-skins` artifact 里。
+
+修复结果：seed 7 清掉 **1564 px**（剩 2532），seed 42 清掉 **1743 px**（剩 2353）。
+
+### 这一轮抓出的三个真 bug
+
+**1. Kaggle 用 title 推 slug，不看 id。** 以 id `lyco-skin-gen` + title
+"Lyco Skin Generator" 推送，Kaggle 归档成了 `lyco-skin-generator`，导致后续
+`kernels status` 找不到。已加 `slugify()` 并在 `validate()` 里强制一致。
+
+**2. 预览画不出它存在的理由。** `character_view` 原来只画 base 层，于是
+**它无法显示白块** —— 而它存在的全部意义就是分辨好皮肤和白块。已改为 base + overlay
+source-over 合成。这个 bug 只有在真实产物上才暴露。
+
+**3. CI 断言照单个种子调参。** 我写了 `after >= 2400`，seed 7 过、seed 42 挂。
+已改成断言真正的不变量（清理量在 1400–1920、算术自洽、角色仍在）。
+
+### keep-percent 阈值的已知副作用
+
+seed 42 有 **5 个 overlay 矩形**（jacket / 双袖 / 双腿）清理后残留低于 12%，被整体清空。
+这个 12% 是沿用你可以工作的笔记本，但对本 seed 可能**丢掉了真实的衣物细节**。
+是否调低需要人眼判断 —— 已记录，未擅自改动。

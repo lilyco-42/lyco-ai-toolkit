@@ -253,13 +253,37 @@ enum SkinCmd {
         #[arg(long, default_value_t = 8)]
         scale: u32,
     },
-    /// Generate a skin from a character prompt (needs an image backend)
+    /// Generate a skin, on Kaggle's free GPU or from a local command
     Generate {
-        /// Character description
+        /// Character description; the Kaggle path uses a reference image instead
         prompt: String,
-        /// Output PNG path
+        /// Output PNG path for a local backend
         #[arg(long, short, default_value = "out/skin.png")]
         out: String,
+        /// 'kaggle' for free cloud GPU, or a generator command line
+        #[arg(long, default_value = "kaggle")]
+        backend: String,
+        /// Kaggle owner, required for --backend kaggle
+        #[arg(long, default_value = "")]
+        owner: String,
+        /// Kaggle kernel slug, required for --backend kaggle
+        #[arg(long, default_value = "")]
+        slug: String,
+        /// Seeds to generate, comma separated
+        #[arg(long, default_value = "7")]
+        seeds: String,
+        /// Working folder for the Kaggle path
+        #[arg(long, default_value = "out/kaggle")]
+        work_dir: String,
+        /// Arm geometry: classic (Steve) or slim (Alex)
+        #[arg(long, default_value = "classic")]
+        arm: String,
+        /// Seconds between status polls
+        #[arg(long, default_value_t = 30)]
+        poll_secs: u64,
+        /// Give up after this many polls
+        #[arg(long, default_value_t = 60)]
+        max_polls: u32,
     },
 }
 
@@ -578,13 +602,41 @@ fn run_skin(cmd: SkinCmd) -> Result<()> {
             Ok(())
         }
 
-        SkinCmd::Generate { prompt, out } => {
-            let _ = (prompt, out);
-            bail!(
-                "skin generation needs a diffusion backend, which is not wired yet.\n\
-                 Working offline alternatives:\n\
-                   lyco-cli skin template --out out/skin.png",
-            )
+        SkinCmd::Generate {
+            prompt,
+            out,
+            backend,
+            owner,
+            slug,
+            seeds,
+            work_dir,
+            arm,
+            poll_secs,
+            max_polls,
+        } => {
+            let arm = parse_arm(&arm)?;
+            match backend.as_str() {
+                // The one path that actually generates: a notebook pushed to
+                // Kaggle, run on a free T4, and the result repaired locally.
+                "kaggle" => {
+                    if owner.trim().is_empty() || slug.trim().is_empty() {
+                        bail!("--backend kaggle needs both --owner and --slug");
+                    }
+                    kaggle::run(&owner, &slug, &seeds, &work_dir, arm, poll_secs, max_polls)
+                }
+                other => {
+                    // A local diffusion command line is the other option, but
+                    // nothing here can guess its interface, so it is refused
+                    // rather than faked.
+                    let _ = (&prompt, &out);
+                    bail!(
+                        "unknown skin backend '{other}'.\n\
+                         Use --backend kaggle --owner <you> --slug <kernel> for free \
+                         cloud GPU generation,\n\
+                         or 'skin template' for an offline placeholder."
+                    )
+                }
+            }
         }
     }
 }
