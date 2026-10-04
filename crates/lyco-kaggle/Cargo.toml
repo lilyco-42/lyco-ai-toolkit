@@ -1,0 +1,11 @@
+[package]
+name = "lyco-kaggle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Run lyco generation on Kaggle's free GPUs"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
