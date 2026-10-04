@@ -82,7 +82,9 @@ impl SkinKernelConfig {
         if self.steps == 0 {
             bail!("step count must be at least 1");
         }
-        if !(self.guidance > 1.0) {
+        // Spelled without a negated comparison: clippy rejects those on
+        // partially ordered types, and the explicit form also catches NaN.
+        if self.guidance <= 1.0 || !self.guidance.is_finite() {
             bail!(
                 "guidance {} is at or near 1.0, which disables classifier-free \
                  guidance and collapses the output to a blank image",
@@ -105,13 +107,13 @@ impl SkinKernelConfig {
 
     pub fn notebook(&self) -> Notebook {
         Notebook::new()
-            .markdown(&self.intro_markdown())
+            .markdown(self.intro_markdown())
             .code("!pip install -q diffusers transformers accelerate pillow httpx")
-            .code(&self.setup_cell())
-            .code(&self.load_cell())
-            .code(&self.reference_cell())
-            .code(&self.generate_cell())
-            .code(&self.report_cell())
+            .code(self.setup_cell())
+            .code(self.load_cell())
+            .code(self.reference_cell())
+            .code(self.generate_cell())
+            .code(self.report_cell())
     }
 
     fn intro_markdown(&self) -> String {
