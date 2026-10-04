@@ -164,7 +164,8 @@ CI 断言 `('model', False)` 与 `('portrait', True)` 同时成立。
 | F7 图像 | lyco-image | 16 | 纯色画布必须被拒绝 |
 | F8 歌词 | lyco-lyrics | 20 | 标记结构断言 + 只吐散文的写入器必须被拒 |
 | S5 bundle | lyco-bundle | 6 | 五产物齐备 + 直读 PNG 头核对尺寸 |
-| **合计** | | **144** | clippy -D warnings + fmt + build + 5 组冒烟测试 |
+| F9 MCP server | lyco-mcp | 12 | **真实 stdio MCP 会话**（4 请求 / 4 回复） |
+| **合计** | | **156** | clippy -D warnings + fmt + build + 6 组冒烟测试 |
 
 本地机器**无 NVIDIA GPU**（无 nvidia-smi / torch / ComfyUI），
 因此所有 GPU 相关工作（F4/F6/F7）设计为子进程边界，本仓库只做可离线验证的部分。
@@ -196,3 +197,28 @@ lyco-cli portrait  # a single portrait
 `a_cube_shell_merges_into_a_handful_of_boxes`（后者在修复前会以 286 失败）。
 
 教训：**硬编码的采样上限在几何算法里就是正确性漏洞。**
+## F9 — MCP server ✅ **已完成**
+
+> 原 F9 的定位是「代码生成 MCP」。实现时判断：**把整个 toolkit 暴露出去更有用** ——
+> agent 想驱动这个项目是去**产出资产**，而这些能力每一个都已经是现成的 crate。
+> 代码生成作为普通的 backend 位保留，而不是单独一个 server。crate 因此从
+> `lyco-codegen-mcp` 更名为 `lyco-mcp`。
+
+- [x] `lyco-mcp::jsonrpc` — 协议切片：success / error / tool_text / tool_error
+- [x] `lyco-mcp::tools` — 12 个工具 + 各自的 JSON Schema
+      `skin_template` `skin_validate` `skin_quantize` `model_humanoid` `model_validate`
+      `glb_info` `model_from_glb` `lyrics_generate` `lyrics_validate` `bgm_generate`
+      `portrait_generate` `bundle`
+- [x] `lyco-mcp::server` — dispatch + stdio transport
+- [x] `lyco-cli mcp` 启动 server
+- **关键协议细节**：工具失败返回的是**成功的 JSON-RPC 响应 + `isError: true`**，
+  不是协议级 error —— 这样模型能读到错误消息并换个做法。
+- **通知不应答**：没有 `id` 的消息（如 `notifications/initialized`）按 spec 不回复，
+  CI 断言 4 个请求只产生 4 条回复。
+- **验收**：CI 里跑一次**真实 stdio 会话** —— initialize / 通知 / tools/list /
+  调用 skin_template（真的产出 PNG 并再用 CLI 校验）/ 未知工具报 -32602。
+  —— 测试 12 passed
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | lyco-cli mcp
+```
