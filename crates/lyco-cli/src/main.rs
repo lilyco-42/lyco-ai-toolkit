@@ -29,6 +29,7 @@ use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{
     apply_palette, distinct_opaque_colors, median_cut, ArmModel, Report, Severity, Skin,
 };
+use lyco_mcp::Registry;
 
 #[derive(Parser, Debug)]
 #[command(name = "lyco-cli", about = "lyco AI asset studio", version)]
@@ -97,6 +98,8 @@ enum Cmd {
         #[arg(long, default_value = "stub")]
         backend: String,
     },
+    /// Run the MCP server on stdin/stdout, for an agent to drive (F9)
+    Mcp,
     /// Generate just a portrait (F7)
     Portrait {
         /// Character description
@@ -254,6 +257,7 @@ fn main() -> Result<()> {
             out,
             backend,
         } => run_portrait(prompt, out, backend),
+        Cmd::Mcp => lyco_mcp::serve_stdio(&Registry::standard()),
     }
 }
 

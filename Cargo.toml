@@ -8,7 +8,7 @@ members = [
     "crates/lyco-bsm",
     "crates/lyco-bundle",
     "crates/lyco-lyrics",
-    "crates/lyco-codegen-mcp",
+    "crates/lyco-mcp",
 ]
 
 [workspace.package]

@@ -177,5 +177,32 @@ jobs:
           fi
 
 
+      # Proves F9 with a real MCP session over stdin/stdout.
+      - name: mcp stdio smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          cat > "$d/req.jsonl" <<EOF
+          {"jsonrpc":"2.0","id":1,"method":"initialize"}
+          {"jsonrpc":"2.0","method":"notifications/initialized"}
+          {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+          {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"skin_template","arguments":{"out":"$d/skin.png"}}}
+          {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"nope"}}
+          EOF
+
+          ./target/debug/lyco-cli mcp < "$d/req.jsonl" > "$d/resp.jsonl"
+
+          # one reply per request; the notification must produce none
+          test "$(wc -l < "$d/resp.jsonl")" -eq 4
+          grep -q '"protocolVersion"' "$d/resp.jsonl"
+          grep -q '"skin_template"' "$d/resp.jsonl"
+          grep -q '"isError":false' "$d/resp.jsonl"
+          grep -q '"code":-32602' "$d/resp.jsonl"
+
+          # the tool really produced its artifact
+          test -s "$d/skin.png"
+          ./target/debug/lyco-cli skin validate "$d/skin.png"
+
+
       - name: fmt
         run: cargo fmt --all -- --check

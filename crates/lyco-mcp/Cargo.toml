@@ -1,0 +1,17 @@
+[package]
+name = "lyco-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MCP server exposing the lyco asset toolkit over stdio"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+lyco-mc-skin = { path = "../lyco-mc-skin" }
+lyco-bsm = { path = "../lyco-bsm" }
+lyco-audio = { path = "../lyco-audio" }
+lyco-image = { path = "../lyco-image" }
+lyco-lyrics = { path = "../lyco-lyrics" }
+lyco-bundle = { path = "../lyco-bundle" }
