@@ -11,6 +11,46 @@ use serde::{Deserialize, Serialize};
 /// it keeps the request explicit.
 pub const T4: &str = "NvidiaTeslaT4";
 
+/// Lowercase a title the way Kaggle turns one into a URL slug.
+///
+/// This exists because of a bug that cost a real GPU run: Kaggle derives the
+/// kernel's slug from its **title**, not from the `id` field, and silently
+/// ignores the id when the two disagree. A kernel pushed as
+/// `owner/lyco-skin-gen` with the title "Lyco Skin Generator" came back as
+/// `owner/lyco-skin-generator`, so the follow-up status call could not find it.
+/// Callers now check the title against the slug before spending any quota.
+pub fn slugify(text: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            pending_dash = false;
+            out.extend(ch.to_lowercase());
+        } else {
+            pending_dash = true;
+        }
+    }
+    out
+}
+
+/// Title-case a slug, so a generated title always slugs back to it.
+pub fn title_from_slug(slug: &str) -> String {
+    slug.split(['-', '_'])
+        .filter(|piece| !piece.is_empty())
+        .map(|piece| {
+            let mut chars = piece.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KernelMetadata {
     pub id: String,

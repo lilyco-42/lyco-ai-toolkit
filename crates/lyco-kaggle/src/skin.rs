@@ -14,7 +14,7 @@
 
 use anyhow::{bail, Result};
 
-use crate::metadata::{KernelMetadata, T4};
+use crate::metadata::{slugify, title_from_slug, KernelMetadata, T4};
 use crate::notebook::Notebook;
 
 /// The model a working run used: a Flux2Klein derivative, about 15 GB.
@@ -48,10 +48,14 @@ pub struct SkinKernelConfig {
 
 impl SkinKernelConfig {
     pub fn new(owner: impl Into<String>, slug: impl Into<String>) -> Self {
+        let slug = slug.into();
+        // Kaggle derives the URL slug from the title, so a generated title is
+        // used: these two must agree or the kernel cannot be looked up again.
+        let title = title_from_slug(&slug);
         SkinKernelConfig {
             owner: owner.into(),
-            slug: slug.into(),
-            title: "Lyco Skin Generator".to_string(),
+            slug,
+            title,
             model_id: DEFAULT_MODEL.to_string(),
             reference_url: DEFAULT_REFERENCE.to_string(),
             seeds: vec![7],
@@ -89,6 +93,17 @@ impl SkinKernelConfig {
                 "guidance {} is at or near 1.0, which disables classifier-free \
                  guidance and collapses the output to a blank image",
                 self.guidance
+            );
+        }
+        // Kaggle slugs the kernel from its title and ignores a disagreeing id,
+        // so a mismatch would make the kernel unreachable by the name we chose.
+        let derived = slugify(&self.title);
+        if derived != self.slug {
+            bail!(
+                "the title '{}' slugs to '{derived}', but the kernel id says '{}'; \
+                 Kaggle uses the title, so either retitle it or use slug '{derived}'",
+                self.title,
+                self.slug
             );
         }
         Ok(())
@@ -344,6 +359,29 @@ mod tests {
         let mut cfg = config();
         cfg.steps = 0;
         assert!(cfg.validate().is_err());
+    }
+
+    /// Regression guard for a bug that cost a real GPU run: this kernel was
+    /// pushed as `lyco-skin-gen` with the title "Lyco Skin Generator", and
+    /// Kaggle filed it as `lyco-skin-generator` instead, so the status call
+    /// could not find it.
+    #[test]
+    fn a_title_whose_slug_disagrees_with_the_id_is_refused() {
+        let mut cfg = SkinKernelConfig::new("me", "lyco-skin-gen");
+        cfg.title = "Lyco Skin Generator".to_string();
+        let err = cfg.validate().unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lyco-skin-generator"), "{text}");
+        assert!(text.contains("Kaggle uses the title"), "{text}");
+    }
+
+    #[test]
+    fn the_generated_title_slugs_back_to_the_slug() {
+        for slug in ["lyco-skin-gen", "a", "multi-part-name"] {
+            let cfg = SkinKernelConfig::new("me", slug);
+            assert_eq!(slugify(&cfg.title), slug, "title was {}", cfg.title);
+            assert!(cfg.validate().is_ok(), "{slug} should validate");
+        }
     }
 
     #[test]
