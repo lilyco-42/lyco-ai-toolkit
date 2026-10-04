@@ -16,6 +16,9 @@ use lyco_lyrics::{backend_from_spec as lyrics_backend, Lyrics, LyricsRequest};
 use lyco_mc_skin::{apply_palette, distinct_opaque_colors, median_cut, ArmModel, Skin};
 
 /// A single callable tool.
+///
+/// Function pointers implement `Debug`, so the registry can derive it too.
+#[derive(Debug, Clone, Copy)]
 pub struct Tool {
     pub name: &'static str,
     pub description: &'static str,
