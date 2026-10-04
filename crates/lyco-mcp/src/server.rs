@@ -34,10 +34,8 @@ pub fn handle_line(registry: &Registry, line: &str) -> Option<Value> {
         }
     };
 
-    let id = request.get("id").cloned();
-    let Some(id) = id else {
-        return None;
-    };
+    // A message without an id is a notification and must not be answered.
+    let id = request.get("id").cloned()?;
     let Some(method) = request.get("method").and_then(Value::as_str) else {
         return Some(jsonrpc::error(
             id,
