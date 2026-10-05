@@ -132,8 +132,9 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
     }
 
     Ok(Description {
-        // `c_accessor_string!` hands back a &str directly, empty when absent.
-        version: data.version().to_string(),
+        // The two accessors differ, and the compiler is the only reliable
+        // source: `version()` is optional and `hash()` is a plain &str.
+        version: data.version().unwrap_or("(none)").to_string(),
         hash: data.hash().to_string(),
         meshes: renderables.len(),
         vertices,
