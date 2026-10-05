@@ -38,7 +38,10 @@ jobs:
               used = set()
               for rs in crate.rglob("*.rs"):
                   used |= set(re.findall(r"^\s*use\s+(lyco_[a-z0-9_]+)", rs.read_text(), re.M))
-              missing = used - declared
+              # A crate's own name shows up in its binary's imports. That is
+              # not a missing dependency, and saying so is a false alarm.
+              own = crate.name.replace("-", "_")
+              missing = used - declared - {own}
               if missing:
                   problems.append(f"{crate.name}: uses {sorted(missing)} but declares {sorted(declared)}")
 
