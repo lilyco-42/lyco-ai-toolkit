@@ -20,8 +20,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{bail, Result};
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub key: String,
@@ -215,7 +213,12 @@ impl Atlas {
             pages: self
                 .pages
                 .iter()
-                .map(|p| replace.get(&p.line).cloned().unwrap_or_else(|| p.name.clone()))
+                .map(|p| {
+                    replace
+                        .get(&p.line)
+                        .cloned()
+                        .unwrap_or_else(|| p.name.clone())
+                })
                 .collect(),
             missing_size,
             fixed_size,
@@ -327,7 +330,10 @@ body
         let page = &atlas.pages()[0];
         assert_eq!(page.name, "page.png");
         assert_eq!(page.size(), Some((1024, 512)));
-        assert_eq!(page.field("format").map(|f| f.value.as_str()), Some("RGBA8888"));
+        assert_eq!(
+            page.field("format").map(|f| f.value.as_str()),
+            Some("RGBA8888")
+        );
         assert_eq!(page.regions, vec!["head".to_string(), "body".to_string()]);
     }
 
@@ -369,7 +375,10 @@ body
         assert!(info.regions.contains("head"));
         assert!(info.regions.contains("body"));
         assert!(info.has_size);
-        assert!(!info.has_pma, "the sample says nothing about premultiplied alpha");
+        assert!(
+            !info.has_pma,
+            "the sample says nothing about premultiplied alpha"
+        );
 
         let missing = Atlas::parse("p.png\nr\n  xy: 0,0\n");
         assert!(!missing.info().has_size);
@@ -389,11 +398,17 @@ body
         assert!(result.missing_size.is_empty());
         let lines: Vec<&str> = result.text.lines().collect();
         assert_eq!(lines[0], "page.png");
-        assert_eq!(lines[1], "size: 512,256", "size goes right after the page name");
+        assert_eq!(
+            lines[1], "size: 512,256",
+            "size goes right after the page name"
+        );
         assert_eq!(lines[2], "format: RGBA8888");
         assert_eq!(lines[3], "head");
         // And the repaired atlas now reads back correctly.
-        assert_eq!(Atlas::parse(&result.text).pages()[0].size(), Some((512, 256)));
+        assert_eq!(
+            Atlas::parse(&result.text).pages()[0].size(),
+            Some((512, 256))
+        );
     }
 
     #[test]
@@ -414,7 +429,10 @@ body
         let atlas = Atlas::parse("page.png\nformat: RGBA8888\nhead\n  xy: 0,0\n");
         let result = atlas.normalize(&Normalize::default());
         assert_eq!(result.missing_size, vec!["page.png".to_string()]);
-        assert!(!result.changed, "nothing could be repaired, so nothing changed");
+        assert!(
+            !result.changed,
+            "nothing could be repaired, so nothing changed"
+        );
         assert!(!result.text.contains("size:"));
     }
 
@@ -427,7 +445,10 @@ body
         };
         let result = atlas.normalize(&opts);
         let lines: Vec<&str> = result.text.lines().collect();
-        assert_eq!(lines[..4], ["page.png", "size: 8,8", "format: RGBA8888", "pma: true"]);
+        assert_eq!(
+            lines[..4],
+            ["page.png", "size: 8,8", "format: RGBA8888", "pma: true"]
+        );
         assert_eq!(lines[4], "head");
         assert!(Atlas::parse(&result.text).pages()[0].has_pma());
     }

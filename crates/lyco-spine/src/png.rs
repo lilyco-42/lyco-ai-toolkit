@@ -65,7 +65,10 @@ mod tests {
     fn a_non_png_is_refused_by_its_signature() {
         let mut bytes = header(8, 8);
         bytes[1] = b'X';
-        assert!(png_size(&bytes).unwrap_err().to_string().contains("signature"));
+        assert!(png_size(&bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("signature"));
     }
 
     #[test]
