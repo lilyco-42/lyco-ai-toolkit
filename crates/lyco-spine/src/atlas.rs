@@ -232,6 +232,12 @@ pub struct Normalize {
     /// Page name to the real size of its PNG.
     pub sizes: BTreeMap<String, (u32, u32)>,
     /// Declare premultiplied alpha on every page that does not say.
+    ///
+    /// **This is a 4.x key. Do not set it on a 3.8 atlas.** Verified against a
+    /// real Arknights export: adding `pma: true` to a Spine 3.8 atlas makes the
+    /// 3.8 runtime refuse to read the file at all - not render it wrongly,
+    /// refuse it. The key was added after 3.8, so an older parser treats an
+    /// unknown page field as a broken page.
     pub pma: bool,
     /// Page name to the local file name it should be rewritten to.
     pub renames: BTreeMap<String, String>,
