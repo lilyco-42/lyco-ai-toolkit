@@ -120,14 +120,29 @@ pub fn read_header(bytes: &[u8]) -> Result<SkelHeader> {
         bail!("the file is empty");
     }
     let mut at = 0usize;
-    let first = read_string(bytes, &mut at)?;
-    let second = read_string(bytes, &mut at)?;
+    let mut strings: Vec<String> = Vec::new();
+    for slot in 0..2 {
+        match read_string(bytes, &mut at) {
+            Ok(Some(text)) => strings.push(text),
+            Ok(None) => {}
+            // A 3.8 export carries a hash and then a version, but a 4.x export
+            // carries the version alone, so running out of file after the first
+            // string is normal rather than an error. Running out before it is
+            // not: that is a truncated file.
+            Err(err) => {
+                if slot == 0 {
+                    return Err(err);
+                }
+                break;
+            }
+        }
+    }
 
     let mut header = SkelHeader {
         hash: None,
         version: None,
     };
-    for candidate in [first, second].into_iter().flatten() {
+    for candidate in strings {
         if looks_like_version(&candidate) {
             if header.version.is_none() {
                 header.version = Some(candidate);
@@ -184,6 +199,9 @@ mod tests {
         assert_eq!(header.family().name(), "spine 3.x");
     }
 
+    /// Regression guard: 4.x exports have no hash, and an earlier version of
+    /// `read_header` insisted on reading two strings, so it rejected every 4.x
+    /// file - the exact family it was supposed to recognise.
     #[test]
     fn a_4_x_file_is_recognised_as_the_other_family() {
         let mut bytes = Vec::new();
