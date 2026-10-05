@@ -18,6 +18,7 @@ fn usage() -> String {
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
         "",
         "options:",
+        "  --animation <name>  play an animation; without it, the setup pose",
         "  --time <seconds>   advance the pose (default 0)",
         "  --size <WxH>       frame size (default 512x512)",
         "  --background <R,G,B,A>  default 0,0,0,0",
@@ -69,6 +70,13 @@ fn main() -> Result<()> {
             println!("meshes:    {}", info.meshes);
             println!("vertices:  {}", info.vertices);
             println!("triangles: {}", info.triangles);
+            println!("animations: {}", info.animations.len());
+            for name in info.animations.iter().take(15) {
+                println!("  {name}");
+            }
+            if info.animations.len() > 15 {
+                println!("  ... and {} more", info.animations.len() - 15);
+            }
             Ok(())
         }
         Some("render") => {
@@ -87,6 +95,7 @@ fn main() -> Result<()> {
                     Some(text) => parse_background(&text)?,
                     None => [0, 0, 0, 0],
                 },
+                animation: flag(&args, "--animation"),
                 time: match flag(&args, "--time") {
                     Some(text) => text.parse().context("bad --time")?,
                     None => 0.0,

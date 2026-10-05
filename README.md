@@ -89,6 +89,30 @@ lyco-cli skin generate --backend kaggle --owner <you> --slug lyco-skin-gen --see
 
 其余需要模型的部分（音频引擎、图像引擎、LLM）仍是 `--backend '<命令行>'` 子进程边界。
 
+## F11 Spine：渲染，以及为什么它不随包发布
+
+```bash
+lyco-cli spine info model.atlas        # 页 / region / 是否声明 size、pma
+lyco-cli spine normalize model.atlas   # 从 PNG 头补/修 size，幂等
+lyco-cli spine version model.skel      # 读出需要的 Spine 版本
+```
+
+`lyco-spine-render` 能把 Spine 骨架摆姿势并**在 CPU 上**画成 PNG（`describe` /
+`render --animation NAME`）。已用真实方舟数据验证：Spine 3.8.99、52 mesh、508 三角形。
+
+**但它不随本仓库发布二进制**，原因很具体：
+
+- 它链接官方 Spine 运行时，那是 **Spine Runtimes License Agreement（商业许可）**
+- 本仓库源码是 MIT，**从它构建出的二进制不是** —— 发布需要你自己的 Spine 授权
+- 所以默认 CI **只验证它能编译**，不产出 artifact；`windows-binary` 只发纯 MIT 的
+  `lyco-cli.exe`
+
+要拿到这个二进制，用仓库里的 **`build from source`** workflow（`workflow_dispatch`）：
+你在自己的 fork 里触发，在你自己的授权下构建，产物只进你这次 run。
+
+**注意：`pma` 是 Spine 4.x 的键。** 往 3.8 的 atlas 里写 `pma: true` 会让 3.8 运行时
+**完全读不了那个文件** —— 实测确认，已在代码和 CLI 帮助里标注。
+
 ## 验证
 
 每次 CI 跑：`test → clippy -D warnings → build → 6 组冒烟测试 → fmt`。

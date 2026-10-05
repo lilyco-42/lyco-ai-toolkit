@@ -1,0 +1,82 @@
+name: build from source
+
+# The Spine renderer links the official Spine runtime, which is under the Spine
+# Runtimes License Agreement - a commercial licence. A binary built from it is
+# therefore not something this repository may hand out: whoever ships one needs
+# their own Spine licence.
+#
+# So the default CI only proves it compiles and stops there. This workflow is
+# how the binary is actually obtained: you run it yourself, in your own fork,
+# under your own licence. Nothing is published anywhere, and the artifact goes
+# to your run and nowhere else.
+#
+# The MIT parts - lyco-cli and the six crates behind it - do not need this;
+# prebuilt Windows binaries for them ship from the ordinary ci workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to build
+        type: choice
+        options:
+          - lyco-spine-render
+          - lyco-cli
+          - both
+        default: lyco-spine-render
+      runner:
+        description: Runner to build on
+        type: choice
+        options:
+          - windows-latest
+          - ubuntu-latest
+        default: windows-latest
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Read this before using the result. It is the whole reason this workflow
+      # exists separately from the ordinary build.
+      - name: licence notice
+        shell: bash
+        run: |
+          cat <<'EOF'
+          ============================================================
+          lyco-spine-render links the official Spine runtime.
+          That runtime is under the Spine Runtimes License Agreement:
+          https://esotericsoftware.com/spine-runtimes-license
+
+          The Rust source in this repository is MIT. A BINARY BUILT FROM
+          lyco-spine-render IS NOT, and using or shipping one requires a
+          valid Spine licence held by you.
+
+          lyco-cli has no such dependency and is MIT end to end.
+          ============================================================
+          EOF
+
+      - name: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.target }}" in
+            lyco-cli)          cargo build --release -p lyco-cli ;;
+            lyco-spine-render) cargo build --release -p lyco-spine-render ;;
+            both)              cargo build --release -p lyco-cli -p lyco-spine-render ;;
+          esac
+
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyco-from-source
+          # Whichever of these were built; the other is simply absent.
+          path: |
+            target/release/lyco-cli
+            target/release/lyco-cli.exe
+            target/release/lyco-spine-render
+            target/release/lyco-spine-render.exe
+          if-no-files-found: error

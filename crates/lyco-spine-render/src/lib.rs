@@ -69,6 +69,8 @@ pub struct Description {
     pub meshes: usize,
     pub vertices: usize,
     pub triangles: usize,
+    /// Animation names, in the order the skeleton declares them.
+    pub animations: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,7 +78,10 @@ pub struct RenderRequest {
     pub width: u32,
     pub height: u32,
     pub background: [u8; 4],
-    /// Seconds to advance the setup pose by. The runtime poses at zero.
+    /// Animation to play. Without one the setup pose is drawn, which is a
+    /// legal pose but rarely the one anybody wants a picture of.
+    pub animation: Option<String>,
+    /// Seconds to advance the pose by.
     pub time: f32,
 }
 
@@ -86,9 +91,42 @@ impl Default for RenderRequest {
             width: 512,
             height: 512,
             background: [0, 0, 0, 0],
+            animation: None,
             time: 0.0,
         }
     }
+}
+
+/// Advance a controller to `time` in fixed steps.
+///
+/// Stepping rather than one jump, so the picture does not depend on how the
+/// caller chose to slice the interval: an animation samples differently across
+/// a single large delta than across the sixty small ones a second of playback
+/// really is.
+fn advance(controller: &mut SkeletonController, time: f32) {
+    const STEP: f32 = 1.0 / 60.0;
+    let mut elapsed = 0.0f32;
+    while elapsed < time {
+        let dt = STEP.min(time - elapsed);
+        controller.update(dt);
+        elapsed += dt;
+    }
+}
+
+/// Start an animation, naming what exists when the name is wrong.
+fn start_animation(
+    controller: &mut SkeletonController,
+    data: &SkeletonData,
+    name: &str,
+) -> Result<()> {
+    controller
+        .animation_state
+        .set_animation_by_name(0, name, true)
+        .map_err(|_| {
+            let available: Vec<&str> = data.animations().map(|a| a.name()).collect();
+            anyhow::anyhow!("no animation called '{name}'; this skeleton has {available:?}")
+        })?;
+    Ok(())
 }
 
 /// Load the skeleton data, binary or JSON.
@@ -129,6 +167,7 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
         meshes: renderables.len(),
         vertices,
         triangles,
+        animations: data.animations().map(|a| a.name().to_string()).collect(),
     })
 }
 
@@ -165,8 +204,11 @@ fn load_textures(atlas_path: &Path) -> Result<Vec<raster::Texture>> {
 pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
     let data = load(src)?;
     let state = Arc::new(AnimationStateData::new(data.clone()));
-    let mut controller = SkeletonController::new(data, state);
-    controller.update(req.time.max(0.0));
+    let mut controller = SkeletonController::new(data.clone(), state);
+    if let Some(name) = &req.animation {
+        start_animation(&mut controller, &data, name)?;
+    }
+    advance(&mut controller, req.time.max(0.0));
     let renderables = controller.renderables();
     if renderables.is_empty() {
         bail!(

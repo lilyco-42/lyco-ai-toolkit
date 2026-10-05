@@ -481,9 +481,11 @@ jobs:
       - name: build the CLI
         run: cargo build --release -p lyco-cli
 
-      # The Spine renderer links the official runtime (through a pure-Rust
-      # transpilation), so it is built and shipped separately from the MIT CLI.
-      - name: build the Spine renderer
+      # The Spine renderer links the official runtime, so it is NOT handed out
+      # here: whoever ships a binary built from it needs a Spine licence. This
+      # step only proves it still compiles. To actually get the binary, run
+      # the `build from source` workflow yourself.
+      - name: prove the Spine renderer still compiles
         run: cargo build --release -p lyco-spine-render
 
       # The binary is only useful if it runs, so exercise the parts an operator
@@ -502,10 +504,10 @@ jobs:
           ./target/release/lyco-cli.exe kaggle --help
           ./target/release/lyco-cli.exe skin generate --help
 
+      # Only the MIT binary. `lyco-spine-render.exe` is deliberately absent:
+      # see the `build from source` workflow for why, and for how to get it.
       - uses: actions/upload-artifact@v4
         with:
           name: lyco-cli-windows
-          path: |
-            target/release/lyco-cli.exe
-            target/release/lyco-spine-render.exe
+          path: target/release/lyco-cli.exe
           if-no-files-found: error
