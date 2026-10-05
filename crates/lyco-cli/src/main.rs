@@ -31,6 +31,9 @@ use lyco_mc_skin::{
     OverlayFixConfig, Report, Severity, Side, Skin,
 };
 use lyco_mcp::Registry;
+use lyco_spine::{png_size, sanitize_page_name, Atlas, Normalize};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 mod kaggle;
 
@@ -101,6 +104,11 @@ enum Cmd {
         #[arg(long, default_value = "stub")]
         backend: String,
     },
+    /// Inspect and repair Spine texture atlases (F11)
+    Spine {
+        #[command(subcommand)]
+        cmd: SpineCmd,
+    },
     /// Run the MCP server on stdin/stdout, for an agent to drive (F9)
     Mcp,
     /// Run a generation job on Kaggle's free GPUs (F1)
@@ -119,6 +127,35 @@ enum Cmd {
         /// 'stub' for the offline placeholder, or a generator command line
         #[arg(long, default_value = "stub")]
         backend: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SpineCmd {
+    /// Report pages, regions, and whether size and pma are declared
+    Info {
+        /// Atlas text file
+        path: String,
+    },
+    /// Repair size fields from the page PNGs, and optionally declare pma
+    Normalize {
+        /// Atlas text file
+        path: String,
+        /// Where the page PNGs live; defaults to the atlas's own directory
+        #[arg(long)]
+        dir: Option<String>,
+        /// Write the repaired atlas here
+        #[arg(long, short)]
+        out: Option<String>,
+        /// Overwrite the input file instead
+        #[arg(long)]
+        write: bool,
+        /// Declare premultiplied alpha on every page that does not say
+        #[arg(long)]
+        pma: bool,
+        /// Also rewrite page names to safe local file names
+        #[arg(long)]
+        sanitize: bool,
     },
 }
 
@@ -389,6 +426,101 @@ fn main() -> Result<()> {
         } => run_portrait(prompt, out, backend),
         Cmd::Mcp => lyco_mcp::serve_stdio(&Registry::standard()),
         Cmd::Kaggle { cmd } => run_kaggle(cmd),
+        Cmd::Spine { cmd } => run_spine(cmd),
+    }
+}
+
+fn run_spine(cmd: SpineCmd) -> Result<()> {
+    match cmd {
+        SpineCmd::Info { path } => {
+            let text =
+                std::fs::read_to_string(&path).with_context(|| format!("cannot read {path}"))?;
+            let atlas = Atlas::parse(&text);
+            let info = atlas.info();
+            println!("pages:   {}", info.pages.len());
+            for page in &info.pages {
+                println!("  {page}");
+            }
+            println!("regions: {}", info.regions.len());
+            println!("declares size: {}", info.has_size);
+            println!("declares pma : {}", info.has_pma);
+            Ok(())
+        }
+        SpineCmd::Normalize {
+            path,
+            dir,
+            out,
+            write,
+            pma,
+            sanitize,
+        } => {
+            let text =
+                std::fs::read_to_string(&path).with_context(|| format!("cannot read {path}"))?;
+            let atlas = Atlas::parse(&text);
+            if atlas.pages().is_empty() {
+                bail!("{path} has no pages, so there is nothing to repair");
+            }
+
+            // The truth about a page's size lives in its PNG header, so look
+            // for the page images next to the atlas unless told otherwise.
+            let atlas_path = PathBuf::from(&path);
+            let base = match &dir {
+                Some(dir) => PathBuf::from(dir),
+                None => match atlas_path.parent() {
+                    Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+                    _ => PathBuf::from("."),
+                },
+            };
+
+            let mut sizes = BTreeMap::new();
+            let mut renames = BTreeMap::new();
+            for page in atlas.pages() {
+                let png = base.join(&page.name);
+                match std::fs::read(&png) {
+                    Ok(bytes) => match png_size(&bytes) {
+                        Ok(size) => {
+                            sizes.insert(page.name.clone(), size);
+                        }
+                        Err(err) => eprintln!("{}: {err}", png.display()),
+                    },
+                    Err(_) => eprintln!(
+                        "{}: not found, so this page's size cannot be repaired",
+                        png.display()
+                    ),
+                }
+                if sanitize {
+                    renames.insert(page.name.clone(), sanitize_page_name(&page.name));
+                }
+            }
+
+            let opts = Normalize {
+                sizes,
+                pma,
+                renames,
+            };
+            let result = atlas.normalize(&opts);
+            for page in &result.fixed_size {
+                eprintln!("{page}: size was wrong and was corrected from the PNG");
+            }
+            for page in &result.missing_size {
+                eprintln!("{page}: size is unknown, so it was left alone");
+            }
+
+            if write {
+                std::fs::write(&atlas_path, &result.text)?;
+                println!("rewrote {}", atlas_path.display());
+            } else if let Some(out) = &out {
+                std::fs::write(out, &result.text)?;
+                println!("wrote {out}");
+            } else {
+                // No destination means print, so the result can be piped.
+                print!("{}", result.text);
+                eprintln!("changed: {}", result.changed);
+                return Ok(());
+            }
+            println!("changed: {}", result.changed);
+            Ok(())
+        }
     }
 }
 

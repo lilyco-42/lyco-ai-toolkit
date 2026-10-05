@@ -314,6 +314,53 @@ jobs:
           path: out/fixtures/
           if-no-files-found: error
 
+      # Atlas repair, on the shape of file the real dumps ship: a page whose
+      # `size` field is missing, sitting next to a PNG that knows the truth.
+      - name: spine atlas repair smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          cp tests/fixtures/blockv06_seed7.png "$d/atlas.png"
+          cat > "$d/model.atlas" <<'EOF'
+          atlas.png
+          format: RGBA8888
+          filter: Linear,Linear
+          repeat: none
+          head
+            rotate: false
+            xy: 2, 2
+            size: 8, 8
+          EOF
+
+          ./target/debug/lyco-cli spine info "$d/model.atlas" > "$d/before.txt"
+          grep -q 'declares size: false' "$d/before.txt"
+          grep -q 'regions: 1' "$d/before.txt"
+          grep -q 'pages:   1' "$d/before.txt"
+
+          ./target/debug/lyco-cli spine normalize "$d/model.atlas" --dir "$d" > "$d/fixed.atlas"
+          grep -q '^size: 64,64$' "$d/fixed.atlas"
+          head -1 "$d/fixed.atlas" | grep -q '^atlas.png$'
+
+          # Repair is idempotent: a second pass must byte-for-byte agree.
+          ./target/debug/lyco-cli spine normalize "$d/fixed.atlas" --dir "$d" > "$d/twice.atlas"
+          cmp "$d/fixed.atlas" "$d/twice.atlas"
+
+          ./target/debug/lyco-cli spine normalize "$d/model.atlas" --dir "$d" --pma > "$d/pma.atlas"
+          grep -q '^pma: true$' "$d/pma.atlas"
+
+          ./target/debug/lyco-cli spine info "$d/pma.atlas" > "$d/after.txt"
+          grep -q 'declares size: true' "$d/after.txt"
+          grep -q 'declares pma : true' "$d/after.txt"
+
+          # A page whose PNG is absent must be reported, not invented.
+          ./target/debug/lyco-cli spine normalize "$d/model.atlas" --dir "$d/nothing" \
+            > "$d/orphan.atlas" 2> "$d/orphan.err"
+          if grep -q '^size:' "$d/orphan.atlas"; then
+            echo 'a size was invented for a page with no PNG'
+            exit 1
+          fi
+          grep -q 'cannot be repaired' "$d/orphan.err"
+
       - name: fmt
         run: cargo fmt --all -- --check
 
