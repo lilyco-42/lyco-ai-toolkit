@@ -255,7 +255,9 @@ enum SkinCmd {
     },
     /// Generate a skin, on Kaggle's free GPU or from a local command
     Generate {
-        /// Character description; the Kaggle path uses a reference image instead
+        /// Character description. The Kaggle path drives off a reference image,
+        /// so this is optional there, and a flag here as everywhere else.
+        #[arg(long, short, default_value = "")]
         prompt: String,
         /// Output PNG path for a local backend
         #[arg(long, short, default_value = "out/skin.png")]
