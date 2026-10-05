@@ -291,3 +291,31 @@ source-over 合成。这个 bug 只有在真实产物上才暴露。
 seed 42 有 **5 个 overlay 矩形**（jacket / 双袖 / 双腿）清理后残留低于 12%，被整体清空。
 这个 12% 是沿用你可以工作的笔记本，但对本 seed 可能**丢掉了真实的衣物细节**。
 是否调低需要人眼判断 —— 已记录，未擅自改动。
+## F11 渲染：动画播放 ✅
+
+`lyco-spine-render render <atlas> <skel> out.png --animation <name> --time <t>`
+
+真实方舟阿米娅实测（14 个动画）：
+
+```
+Attack  Attack_Begin  Attack_End  Default  Die  Idle  Skill
+Skill_2  Skill_2_Begin  Skill_2_End  Skill_Begin  Skill_End  Start  Stun
+```
+
+三个姿势渲染结果不同（Idle 站姿 / Attack 出拳 / Skill 蹲伏），说明动画采样生效。
+**步进按 1/60 秒固定推进**，而不是一次跳到位 —— 动画在大 delta 和小 delta 下
+采样结果不同，固定步长才可复现。
+
+## 授权与分发安排 ✅
+
+| 东西 | 许可 | 发布方式 |
+|---|---|---|
+| 源码（全部 crate） | MIT | GitHub |
+| `lyco-cli.exe` | MIT | `ci` workflow artifact |
+| `lyco-spine-render.exe` | **Spine 商业许可** | ❌ **不发布**；用 `build from source` workflow 自己编译 |
+
+默认 CI **只验证 Spine 渲染器能编译**，不产出 artifact。要二进制就走
+`.github/workflows/build-from-source.yml`（`workflow_dispatch`），在**你自己的
+授权**下构建，产物只进你这次 run。工作流开头会打印许可提示。
+
+已实测：`gh workflow run 'build from source' -f target=lyco-spine-render` → success。
