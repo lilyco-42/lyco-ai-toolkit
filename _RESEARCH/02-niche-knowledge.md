@@ -217,3 +217,69 @@ Spine 不是可以自由实现渲染器的开放格式。要正式用，须购�
 
 **资源不进仓库**：方舟美术属鹰角。真实文件只在本机 `.kaggle-scratch/` 用于验证，
 CI 用合成的等价字节。
+## 7. Spine 3.8 渲染：跑通了（2026-10-05 实测）
+
+### 7.1 选型结果
+
+| 候选 | 许可 | 能读 3.8 | 结论 |
+|---|---|---|---|
+| `Latias94/spine2d` | Apache-2.0 | ❌ 只 4.3，硬拒绝 | 不可用 |
+| `jabuwu/rusty_spine` 0.8 | Spine 商业 | ❌ 4.2 | 版本不符 |
+| **`jabuwu/rusty_spine3.8`** | Spine 商业 | ✅ | **采用** |
+| `axieinfinity/spine-rs` | MIT 外壳 + spine-c FFI | ✅ | 底层仍是商业许可 |
+
+`rusty_spine3.8` 是**纯 Rust**（无 `build.rs`、无 C 工具链），因为 C 运行时是
+**作者时期转译**的而非构建时链接。所以能像 `lyco-cli` 一样在 CI 出二进制。
+授权条款原文：*"The Rust code is licensed under dual MIT / Apache-2.0 ... you must
+follow the Spine Runtimes License Agreement"*。
+
+### 7.2 渲染管线（全部离线、纯 CPU）
+
+```
+lyco-spine-render describe <atlas> <skel>          # 版本 / mesh / 三角形数
+lyco-spine-render render <atlas> <skel> out.png    # 摆姿势 + 光栅化 → PNG
+```
+
+- **姿态**：`rusty_spine` 的 `SkeletonController` 给出 `SkeletonRenderable`
+  （`vertices: [[f32;2]]` + `uvs: [[f32;2]]` + `indices: [u16]` + 每件的
+  `blend_mode` / `color` / `premultiplied_alpha`）
+- **光栅化**：自己写的 CPU 光栅器（`lyco-spine-render::raster`），双线性采样、
+  barycentric 重心坐标、四种混合模式。**不知道 Spine 的存在**，所以能离线单测
+- **为什么不用 wgpu**：操作机没有真显卡，CI 完全没有。CPU 光栅器慢但可移植，
+  而且**到处产生相同的字节**，这正是测试需要的
+
+### 7.3 真实方舟数据实测
+
+```
+version:   3.8.99
+hash:      3zUmVpPXAB+DFpqv9VEzMu6Co8M
+meshes:    52
+vertices:  976
+triangles: 508
+```
+
+渲染结果：**完整角色**（阿米娅）。
+
+### 7.4 两个把渲染卡死的 atlas 问题
+
+**其一：缺 `size` → UV 除零。** 原版 `char_002_amiya.atlas` 没有任何 `size`
+字段。C 运行时用 0×0 当页面尺寸算 UV → NaN → **什么都画不出来**（1909 字节的空图）。
+**用 `lyco-spine` 补上 `size: 512,512` 后立刻渲染成功**（49287 字节）。
+
+这直接印证了第 6 节：atlas 修复不是锦上添花，**它是渲染能工作的前提**。
+
+**其二：`pma: true` 会让 3.8 运行时彻底读不了文件。** 实测：
+
+| atlas 变体 | 3.8 C 运行时 |
+|---|---|
+| 原版（无 size） | ✅ 能读，但 UV 坏，画不出 |
+| 只补 `size` | ✅ 能读，**渲染成功** |
+| 补 `size` + `pma: true` | ❌ **`Failed to read file`** |
+
+`pma` 是 **4.x 引入的键**。3.8 的解析器遇到不认识的页字段会**判定整页损坏**。
+所以「补 pma」这条从 GPL 项目学来的经验，**对 3.8 是有害的** —— 已在代码和 CLI
+帮助里标注。
+
+### 7.5 资源不进仓库
+
+方舟美术属鹰角。真实文件只在本机 `.kaggle-scratch/` 用于验证，仓库零字节。
