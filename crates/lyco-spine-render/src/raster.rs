@@ -306,14 +306,24 @@ fn draw_triangle(
                     a + d[3] * (1.0 - a),
                 ],
             };
+            // The blend maths above is naturally premultiplied, but a PNG
+            // stores straight alpha and `pixel()` reads the frame back that
+            // way. Storing the premultiplied value would darken every
+            // semi-transparent edge, so undo the multiplication here.
+            let alpha = out[3];
+            let stored = if alpha > 1e-6 {
+                [out[0] / alpha, out[1] / alpha, out[2] / alpha, alpha]
+            } else {
+                [0.0, 0.0, 0.0, 0.0]
+            };
             frame.set(
                 x,
                 y,
                 [
-                    to_byte(out[0]),
-                    to_byte(out[1]),
-                    to_byte(out[2]),
-                    to_byte(out[3]),
+                    to_byte(stored[0]),
+                    to_byte(stored[1]),
+                    to_byte(stored[2]),
+                    to_byte(stored[3]),
                 ],
             );
         }
@@ -632,10 +642,13 @@ mod tests {
     }
 
     #[test]
+    /// Coincident vertices, not merely collinear ones: three collinear points
+    /// stop being exactly collinear once they are scaled and translated in f32,
+    /// and a sub-pixel sliver is a legitimate thing to draw.
     fn a_degenerate_triangle_draws_nothing_instead_of_dividing_by_zero() {
         let mesh = Mesh {
-            vertices: vec![[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
-            uvs: vec![[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
+            vertices: vec![[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]],
+            uvs: vec![[0.0, 0.0], [1.0, 1.0], [0.5, 0.5]],
             indices: vec![0, 1, 2],
             color: [1.0, 1.0, 1.0, 1.0],
             blend: Blend::Normal,
