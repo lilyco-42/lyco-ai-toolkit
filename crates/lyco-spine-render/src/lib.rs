@@ -123,7 +123,9 @@ fn start_animation(
         .animation_state
         .set_animation_by_name(0, name, true)
         .map_err(|_| {
-            let available: Vec<&str> = data.animations().map(|a| a.name()).collect();
+            // Owned, because `name()` borrows the animation the iterator just
+            // handed us, which does not outlive this closure.
+            let available: Vec<String> = data.animations().map(|a| a.name().to_string()).collect();
             anyhow::anyhow!("no animation called '{name}'; this skeleton has {available:?}")
         })?;
     Ok(())
