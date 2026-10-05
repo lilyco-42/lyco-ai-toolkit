@@ -14,3 +14,4 @@ lyco-bsm = { path = "../lyco-bsm" }
 lyco-audio = { path = "../lyco-audio" }
 lyco-image = { path = "../lyco-image" }
 lyco-lyrics = { path = "../lyco-lyrics" }
+lyco-spine = { path = "../lyco-spine" }

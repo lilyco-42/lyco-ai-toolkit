@@ -22,6 +22,7 @@ use lyco_bsm::player_file;
 use lyco_image::{backend_from_spec as image_backend, PortraitRequest};
 use lyco_lyrics::{backend_from_spec as lyrics_backend, LyricsRequest};
 use lyco_mc_skin::{ArmModel, Skin};
+use lyco_spine::{png_size, Atlas, Normalize};
 
 /// One produced file, and what produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +52,15 @@ pub struct BundleRequest {
     pub bgm_backend: String,
     pub image_backend: String,
     pub lyrics_backend: String,
+    /// Spine atlases to repair on the way through. Each one's page PNGs are
+    /// looked for beside the atlas itself.
+    pub spine: Vec<PathBuf>,
+    /// Also declare premultiplied alpha on repaired atlases.
+    ///
+    /// Off by default because it is a judgement about the texture, not a fact
+    /// that can be read from the file. `size` is repaired either way, since
+    /// the truth about that is in the PNG header.
+    pub spine_pma: bool,
 }
 
 impl BundleRequest {
@@ -63,6 +73,8 @@ impl BundleRequest {
             bgm_backend: "stub".to_string(),
             image_backend: "stub".to_string(),
             lyrics_backend: "stub".to_string(),
+            spine: Vec::new(),
+            spine_pma: false,
         }
     }
 }
@@ -162,6 +174,76 @@ pub fn build(req: &BundleRequest) -> Result<Manifest> {
         notes.push("lyrics.txt is placeholder lines, not songwriting".to_string());
     }
 
+    // 6. Spine atlases, when any were handed in. Repairing them here means the
+    //    bundle that ships is one whose atlases a runtime can actually open -
+    //    a dump that omitted `size` renders with every region misplaced.
+    for atlas_path in &req.spine {
+        let text = std::fs::read_to_string(atlas_path)
+            .with_context(|| format!("cannot read {}", atlas_path.display()))?;
+        let atlas = Atlas::parse(&text);
+        if atlas.pages().is_empty() {
+            bail!(
+                "{} has no pages, so it is not a Spine atlas",
+                atlas_path.display()
+            );
+        }
+
+        let beside = match atlas_path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+            _ => PathBuf::from("."),
+        };
+        let mut sizes = std::collections::BTreeMap::new();
+        for page in atlas.pages() {
+            let png = beside.join(&page.name);
+            match std::fs::read(&png) {
+                Ok(bytes) => match png_size(&bytes) {
+                    Ok(size) => {
+                        sizes.insert(page.name.clone(), size);
+                    }
+                    Err(err) => notes.push(format!("{}: {err}", png.display())),
+                },
+                Err(_) => notes.push(format!(
+                    "{}: its PNG was not found, so its size was left alone",
+                    png.display()
+                )),
+            }
+        }
+
+        let opts = Normalize {
+            sizes,
+            pma: req.spine_pma,
+            renames: Default::default(),
+        };
+        let result = atlas.normalize(&opts);
+        let file = atlas_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "atlas.atlas".to_string());
+        let dest = req.out_dir.join(&file);
+        std::fs::write(&dest, &result.text)?;
+        artifacts.push(Artifact {
+            kind: "spine_atlas".to_string(),
+            file: file.clone(),
+            // Not a placeholder: the repair is real work on a real input.
+            backend: "lyco-spine".to_string(),
+            bytes: std::fs::metadata(&dest)?.len(),
+            placeholder: false,
+        });
+
+        let info = atlas.info();
+        let mut summary = format!(
+            "{file}: {} page(s), {} region(s), {} size(s) corrected, {} unsized",
+            info.pages.len(),
+            info.regions.len(),
+            result.fixed_size.len(),
+            result.missing_size.len()
+        );
+        if req.spine_pma {
+            summary.push_str(", premultiplied alpha declared");
+        }
+        notes.push(summary);
+    }
+
     let manifest = Manifest {
         prompt: req.prompt.clone(),
         arm: req.arm.name().to_string(),
@@ -249,6 +331,94 @@ mod tests {
         );
         assert!(find("lyrics").placeholder);
         assert_eq!(manifest.notes.len(), 4);
+    }
+
+    /// An atlas whose page image sits beside it, as a real dump ships.
+    fn spine_fixture(dir: &std::path::Path) -> PathBuf {
+        std::fs::create_dir_all(dir).expect("fixture dir");
+        // A real skin PNG stands in for an atlas page: only its header matters.
+        let source = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/blockv06_seed7.png"
+        );
+        std::fs::copy(source, dir.join("page.png")).expect("copy the page image");
+        let atlas = dir.join("char.atlas");
+        std::fs::write(
+            &atlas,
+            "page.png\nformat: RGBA8888\nfilter: Linear,Linear\nhead\n  xy: 2, 2\n",
+        )
+        .expect("write the atlas");
+        atlas
+    }
+
+    #[test]
+    fn a_spine_atlas_handed_in_is_repaired_into_the_bundle() {
+        let atlas = spine_fixture(&tmp("spine-src"));
+        let mut req = BundleRequest::new("a quiet librarian", tmp("spine-out"));
+        req.spine = vec![atlas];
+        let manifest = build(&req).expect("build");
+
+        let artifact = manifest
+            .artifacts
+            .iter()
+            .find(|a| a.kind == "spine_atlas")
+            .expect("a spine artifact");
+        assert_eq!(artifact.file, "char.atlas");
+        assert_eq!(artifact.backend, "lyco-spine");
+        assert!(
+            !artifact.placeholder,
+            "a repair is real work on a real input"
+        );
+
+        let text = std::fs::read_to_string(req.out_dir.join("char.atlas")).expect("read");
+        assert!(text.contains("size: 64,64"), "{text}");
+        assert!(
+            text.contains("format: RGBA8888"),
+            "the rest must survive: {text}"
+        );
+        // And the shipped copy is settled: repairing it again changes nothing.
+        let shipped = Atlas::parse(&text);
+        assert!(!shipped.normalize(&Normalize::default()).changed);
+    }
+
+    #[test]
+    fn a_bundle_without_spine_input_says_nothing_about_spine() {
+        let req = BundleRequest::new("x", tmp("no-spine"));
+        let manifest = build(&req).expect("build");
+        assert!(manifest.artifacts.iter().all(|a| a.kind != "spine_atlas"));
+        assert_eq!(manifest.notes.len(), 4, "only the four stub notes");
+    }
+
+    #[test]
+    fn a_page_whose_image_is_missing_is_noted_rather_than_fatal() {
+        let dir = tmp("spine-orphan");
+        std::fs::create_dir_all(&dir).expect("dir");
+        let atlas = dir.join("orphan.atlas");
+        std::fs::write(&atlas, "gone.png\nformat: RGBA8888\nhead\n  xy: 0,0\n").expect("write");
+
+        let mut req = BundleRequest::new("x", tmp("spine-orphan-out"));
+        req.spine = vec![atlas];
+        let manifest = build(&req).expect("a missing page image must not fail the bundle");
+
+        let text = std::fs::read_to_string(req.out_dir.join("orphan.atlas")).expect("read");
+        assert!(!text.contains("size:"), "no size may be invented: {text}");
+        assert!(
+            manifest.notes.iter().any(|n| n.contains("not found")),
+            "{:?}",
+            manifest.notes
+        );
+    }
+
+    #[test]
+    fn a_file_that_is_not_an_atlas_is_refused() {
+        let dir = tmp("spine-empty");
+        std::fs::create_dir_all(&dir).expect("dir");
+        let atlas = dir.join("empty.atlas");
+        std::fs::write(&atlas, "").expect("write");
+        let mut req = BundleRequest::new("x", tmp("spine-empty-out"));
+        req.spine = vec![atlas];
+        let err = build(&req).unwrap_err();
+        assert!(err.to_string().contains("not a Spine atlas"), "{err}");
     }
 
     #[test]

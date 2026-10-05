@@ -66,6 +66,12 @@ enum Cmd {
         /// Portrait backend: 'stub' or a generator command line
         #[arg(long, default_value = "stub")]
         image_backend: String,
+        /// A Spine atlas to repair into the bundle; repeat for more than one
+        #[arg(long)]
+        spine: Vec<String>,
+        /// Also declare premultiplied alpha on the repaired atlases
+        #[arg(long)]
+        spine_pma: bool,
     },
     /// Minecraft skin tools (F1)
     Skin {
@@ -410,7 +416,18 @@ fn main() -> Result<()> {
             bgm_duration,
             bgm_backend,
             image_backend,
-        } => run_bundle(prompt, out, arm, bgm_duration, bgm_backend, image_backend),
+            spine,
+            spine_pma,
+        } => run_bundle(
+            prompt,
+            out,
+            arm,
+            bgm_duration,
+            bgm_backend,
+            image_backend,
+            spine,
+            spine_pma,
+        ),
         Cmd::Skin { cmd } => run_skin(cmd),
         Cmd::Bsm { cmd } => run_bsm(cmd),
         Cmd::Bgm {
@@ -585,12 +602,16 @@ fn run_bundle(
     bgm_duration: u32,
     bgm_backend: String,
     image_backend: String,
+    spine: Vec<String>,
+    spine_pma: bool,
 ) -> Result<()> {
     let mut request = BundleRequest::new(prompt, out);
     request.arm = parse_arm(&arm)?;
     request.bgm_duration_secs = bgm_duration;
     request.bgm_backend = bgm_backend;
     request.image_backend = image_backend;
+    request.spine = spine.into_iter().map(PathBuf::from).collect();
+    request.spine_pma = spine_pma;
 
     let manifest = lyco_bundle::build(&request)?;
 
