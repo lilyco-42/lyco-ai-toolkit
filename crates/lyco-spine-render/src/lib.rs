@@ -132,9 +132,9 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
     }
 
     Ok(Description {
-        // Both are optional: a 4.x export carries a version and no hash.
-        version: data.version().unwrap_or("(none)").to_string(),
-        hash: data.hash().unwrap_or("(none)").to_string(),
+        // `c_accessor_string!` hands back a &str directly, empty when absent.
+        version: data.version().to_string(),
+        hash: data.hash().to_string(),
         meshes: renderables.len(),
         vertices,
         triangles,
