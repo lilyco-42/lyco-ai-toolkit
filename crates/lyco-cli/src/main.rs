@@ -31,7 +31,7 @@ use lyco_mc_skin::{
     OverlayFixConfig, Report, Severity, Side, Skin,
 };
 use lyco_mcp::Registry;
-use lyco_spine::{png_size, sanitize_page_name, Atlas, Normalize};
+use lyco_spine::{png_size, read_header, sanitize_page_name, Atlas, Normalize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -135,6 +135,11 @@ enum SpineCmd {
     /// Report pages, regions, and whether size and pma are declared
     Info {
         /// Atlas text file
+        path: String,
+    },
+    /// Report the Spine version a .skel file needs
+    Version {
+        /// .skel file
         path: String,
     },
     /// Repair size fields from the page PNGs, and optionally declare pma
@@ -444,6 +449,18 @@ fn run_spine(cmd: SpineCmd) -> Result<()> {
             println!("regions: {}", info.regions.len());
             println!("declares size: {}", info.has_size);
             println!("declares pma : {}", info.has_pma);
+            Ok(())
+        }
+        SpineCmd::Version { path } => {
+            let bytes = std::fs::read(&path).with_context(|| format!("cannot read {path}"))?;
+            let header = read_header(&bytes)?;
+            println!("file:    {path} ({} bytes)", bytes.len());
+            println!(
+                "version: {}",
+                header.version.as_deref().unwrap_or("(not declared)")
+            );
+            println!("hash:    {}", header.hash.as_deref().unwrap_or("(none)"));
+            println!("family:  {}", header.family().name());
             Ok(())
         }
         SpineCmd::Normalize {

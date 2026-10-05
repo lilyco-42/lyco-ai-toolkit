@@ -391,6 +391,41 @@ jobs:
           fi
           grep -q 'cannot be repaired' "$d/orphan.err"
 
+      # A real export must name its Spine version, because the version decides
+      # which runtimes can open it at all. These are the first 35 bytes of a
+      # real Arknights .skel: a hash, then 3.8.99.
+      - name: spine skeleton version smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          python3 - "$d/real.skel" <<'PY'
+          import sys
+
+          def s(text):
+              b = text.encode()
+              # The length byte counts a terminator that is not written.
+              return bytes([len(b) + 1]) + b
+
+          data = s("3zUmVpPXAB+DFpqv9VEzMu6Co8M") + s("3.8.99") + bytes([0xC2, 0xFA, 0xCD])
+          open(sys.argv[1], "wb").write(data)
+          PY
+
+          ./target/debug/lyco-cli spine version "$d/real.skel" > "$d/v.txt"
+          grep -q 'version: 3.8.99' "$d/v.txt"
+          grep -q 'family:  spine 3.x' "$d/v.txt"
+          grep -q '3zUmVpPXAB' "$d/v.txt"
+
+          # A 4.3 export has no hash and is a different family.
+          python3 - "$d/v43.skel" <<'PY'
+          import sys
+
+          b = b"4.3.00"
+          open(sys.argv[1], "wb").write(bytes([len(b) + 1]) + b)
+          PY
+          ./target/debug/lyco-cli spine version "$d/v43.skel" > "$d/v43.txt"
+          grep -q 'version: 4.3.00' "$d/v43.txt"
+          grep -q 'family:  spine 4.x' "$d/v43.txt"
+
       - name: fmt
         run: cargo fmt --all -- --check
 
