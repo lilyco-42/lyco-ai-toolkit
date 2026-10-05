@@ -33,3 +33,7 @@ _RESEARCH/.*.md
 # Local CI log dumps
 .ci.log
 *.log
+
+# The CLI binary downloaded from CI. It is a build output, not source: the
+# operator's machine does not compile, so it is fetched and ignored here.
+_bin/
