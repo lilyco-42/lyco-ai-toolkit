@@ -155,6 +155,13 @@ impl Kaggle {
             })?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        // A run can succeed while warning. Kaggle says "your kernel title does
+        // not resolve to the specified id" on a push that works, and that
+        // warning is the only notice that the kernel was filed under a
+        // different slug. Dropping it hides a real problem, so it is echoed.
+        if output.status.success() && !stderr.trim().is_empty() {
+            eprint!("{stderr}");
+        }
         if !output.status.success() {
             // The CLI reports some failures on stdout, so show whichever spoke.
             let detail = match (stderr.trim().is_empty(), stdout.trim().is_empty()) {
@@ -348,6 +355,18 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("temp dir");
         let err = Kaggle::new().push(&dir, None).unwrap_err();
         assert!(err.to_string().contains("kernel-metadata.json"), "{err}");
+    }
+
+    /// The happy path must stay usable, and a real CLI must still be reachable.
+    #[test]
+    fn a_successful_run_yields_its_stdout() {
+        if !Kaggle::new().available() {
+            return;
+        }
+        let text = Kaggle::new()
+            .run(&["--version".to_string()])
+            .expect("version");
+        assert!(text.contains("Kaggle"), "{text}");
     }
 
     #[test]
