@@ -28,9 +28,10 @@ use std::sync::Arc;
 
 use lyco_spine::Atlas as AtlasText;
 use rusty_spine::{
-    AnimationStateData, Atlas as SpineAtlas, BlendMode, SkeletonBinary, SkeletonController,
-    SkeletonData, SkeletonJson,
+    AnimationStateData, Atlas as SpineAtlas, BlendMode, SkeletonBinary, SkeletonData, SkeletonJson,
 };
+// Not re-exported at the crate root, so it is named through its module.
+use rusty_spine::controller::SkeletonController;
 
 /// Where a skeleton's two halves live.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,8 +132,9 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
     }
 
     Ok(Description {
-        version: data.version().to_string(),
-        hash: data.hash().to_string(),
+        // Both are optional: a 4.x export carries a version and no hash.
+        version: data.version().unwrap_or("(none)").to_string(),
+        hash: data.hash().unwrap_or("(none)").to_string(),
         meshes: renderables.len(),
         vertices,
         triangles,
