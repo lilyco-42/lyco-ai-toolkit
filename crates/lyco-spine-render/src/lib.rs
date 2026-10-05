@@ -106,16 +106,6 @@ fn load(src: &SpineSource) -> Result<Arc<SkeletonData>> {
     Ok(Arc::new(data))
 }
 
-fn posed_controller(src: &SpineSource, time: f32) -> Result<(SkeletonController, usize)> {
-    let data = load(src)?;
-    let state = Arc::new(AnimationStateData::new(data.clone()));
-    let mut controller = SkeletonController::new(data, state);
-    controller.update(time.max(0.0));
-    let renderables = controller.renderables();
-    let count = renderables.len();
-    Ok((controller, count))
-}
-
 /// Report what the skeleton declares and how much it poses to.
 pub fn describe(src: &SpineSource) -> Result<Description> {
     let data = load(src)?;

@@ -400,7 +400,7 @@ pub fn render(
                 textures.len()
             )
         })?;
-        for triangle in mesh.indices.chunks_exact(3) {
+        for triangle in mesh.indices.as_chunks::<3>().0 {
             let (i0, i1, i2) = (
                 triangle[0] as usize,
                 triangle[1] as usize,
