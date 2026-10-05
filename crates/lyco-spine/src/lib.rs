@@ -26,5 +26,5 @@
 pub mod atlas;
 pub mod png;
 
-pub use atlas::{Atlas, AtlasInfo, Normalize, Normalized, Page};
+pub use atlas::{parse_size, sanitize_page_name, Atlas, AtlasInfo, Normalize, Normalized, Page};
 pub use png::png_size;
