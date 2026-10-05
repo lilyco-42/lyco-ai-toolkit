@@ -193,6 +193,20 @@ fn to_byte(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
+/// True when a pixel lying exactly on this edge belongs to the triangle.
+///
+/// Without this, a pixel on the edge that two triangles share is claimed and
+/// blended by both, which double-draws a one-pixel seam along every shared
+/// diagonal. The convention is the one hardware rasterisers use: with the
+/// winding normalised so the area is positive, an edge owns its boundary
+/// pixels when it is a top edge (horizontal, running right) or a left edge
+/// (running up).
+fn owns_edge(a: [f32; 2], b: [f32; 2], sign: f32) -> bool {
+    let dx = (b[0] - a[0]) * sign;
+    let dy = (b[1] - a[1]) * sign;
+    (dy == 0.0 && dx > 0.0) || dy < 0.0
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_triangle(
     frame: &mut Frame,
@@ -245,7 +259,11 @@ fn draw_triangle(
             let w0 = edge(positions[1], positions[2], p) * sign / area;
             let w1 = edge(positions[2], positions[0], p) * sign / area;
             let w2 = edge(positions[0], positions[1], p) * sign / area;
-            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+            // Strictly inside, or exactly on an edge this triangle owns.
+            let inside = (w0 > 0.0 || (w0 == 0.0 && owns_edge(positions[1], positions[2], sign)))
+                && (w1 > 0.0 || (w1 == 0.0 && owns_edge(positions[2], positions[0], sign)))
+                && (w2 > 0.0 || (w2 == 0.0 && owns_edge(positions[0], positions[1], sign)));
+            if !inside {
                 continue;
             }
 
