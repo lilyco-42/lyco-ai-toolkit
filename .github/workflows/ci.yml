@@ -426,6 +426,42 @@ jobs:
           grep -q 'version: 4.3.00' "$d/v43.txt"
           grep -q 'family:  spine 4.x' "$d/v43.txt"
 
+      # The bundle has to carry a repaired atlas through, and must not invent a
+      # size when the page image is absent.
+      - name: bundle spine repair smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          mkdir -p "$d/src"
+          cp tests/fixtures/blockv06_seed7.png "$d/src/page.png"
+          printf 'page.png\nformat: RGBA8888\nhead\n  xy: 2, 2\n' > "$d/src/char.atlas"
+
+          ./target/debug/lyco-cli bundle --prompt 'amiya' --out "$d/out" --spine "$d/src/char.atlas"
+          grep -q '^size: 64,64$' "$d/out/char.atlas"
+          grep -q '^format: RGBA8888$' "$d/out/char.atlas"
+
+          python3 - "$d/out/manifest.json" <<'PY'
+          import json, sys
+
+          m = json.load(open(sys.argv[1]))
+          kinds = [a["kind"] for a in m["artifacts"]]
+          assert "spine_atlas" in kinds, kinds
+          a = next(a for a in m["artifacts"] if a["kind"] == "spine_atlas")
+          assert a["backend"] == "lyco-spine", a
+          assert a["placeholder"] is False, "a repair is real work"
+          print("bundle spine artifact ok")
+          PY
+
+          # An orphan page must be reported, never given a size it cannot know.
+          mkdir -p "$d/orphan"
+          printf 'gone.png\nformat: RGBA8888\nhead\n  xy: 0,0\n' > "$d/orphan/o.atlas"
+          ./target/debug/lyco-cli bundle --prompt x --out "$d/orphan-out" --spine "$d/orphan/o.atlas" 2>&1 | tee "$d/orphan.log"
+          if grep -q '^size:' "$d/orphan-out/o.atlas"; then
+            echo 'a size was invented for an atlas with no page image'
+            exit 1
+          fi
+          grep -q 'not found' "$d/orphan.log"
+
       - name: fmt
         run: cargo fmt --all -- --check
 
