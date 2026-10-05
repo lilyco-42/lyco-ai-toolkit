@@ -1,0 +1,9 @@
+[package]
+name = "lyco-spine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Spine texture-atlas parsing and normalization (F11)"
+
+[dependencies]
+anyhow = { workspace = true }
