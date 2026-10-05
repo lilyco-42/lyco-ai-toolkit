@@ -316,3 +316,38 @@ jobs:
 
       - name: fmt
         run: cargo fmt --all -- --check
+
+  # A Windows executable has to be built on Windows, and the operator's machine
+  # may not compile at all. Handing over the binary is the entire point of this
+  # job: everything the local machine needs to do is run it.
+  windows-binary:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build the CLI
+        run: cargo build --release -p lyco-cli
+
+      # The binary is only useful if it runs, so exercise the parts an operator
+      # would touch before handing it over.
+      - name: smoke test the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/lyco-cli.exe --version
+          d="$(mktemp -d)"
+          ./target/release/lyco-cli.exe skin template --out "$d/skin.png"
+          ./target/release/lyco-cli.exe skin validate "$d/skin.png"
+          ./target/release/lyco-cli.exe skin fix-overlay "$d/skin.png" --out "$d/fixed.png"
+          ./target/release/lyco-cli.exe skin preview "$d/fixed.png" --out "$d/front.png" --scale 4
+          test -s "$d/front.png"
+          ./target/release/lyco-cli.exe kaggle --help
+          ./target/release/lyco-cli.exe skin generate --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyco-cli-windows
+          path: target/release/lyco-cli.exe
+          if-no-files-found: error
