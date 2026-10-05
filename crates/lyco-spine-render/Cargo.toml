@@ -1,0 +1,31 @@
+[package]
+name = "lyco-spine-render"
+version.workspace = true
+edition.workspace = true
+description = "Render Spine 3.8 skeletons headlessly on the CPU (F11)"
+# Deliberately NOT `license.workspace = true`.
+#
+# The source of this crate is MIT like the rest of the workspace, but it reaches
+# the official Spine runtime through `rusty_spine`, and that runtime is under the
+# Spine Runtimes License Agreement - a commercial licence, not an open one.
+# Anyone shipping a binary built from this crate needs a Spine licence, so the
+# crate says so on its own line rather than hiding behind the workspace default.
+license = "MIT OR Apache-2.0"
+# Not for publication: the combination would mislead a crates.io consumer.
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+image = { workspace = true }
+# Spine 3.8 specifically. The upstream `rusty_spine` crate targets 4.1/4.2, and
+# Arknights exports 3.8, so this is the fork that can read them.
+#
+# Pure Rust: the C runtime was transpiled ahead of time, so there is no build.rs
+# and no C toolchain, which is what lets this build in CI.
+rusty_spine = { git = "https://github.com/jabuwu/rusty_spine3.8", rev = "4ff8b7280aeb7367f235752c30dc85184c01452a" }
+# Only for reading an atlas's page file names; the parser has its own tests.
+lyco-spine = { path = "../lyco-spine" }
+
+[[bin]]
+name = "lyco-spine-render"
+path = "src/main.rs"

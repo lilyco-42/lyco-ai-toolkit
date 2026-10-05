@@ -478,6 +478,11 @@ jobs:
       - name: build the CLI
         run: cargo build --release -p lyco-cli
 
+      # The Spine renderer links the official runtime (through a pure-Rust
+      # transpilation), so it is built and shipped separately from the MIT CLI.
+      - name: build the Spine renderer
+        run: cargo build --release -p lyco-spine-render
+
       # The binary is only useful if it runs, so exercise the parts an operator
       # would touch before handing it over.
       - name: smoke test the binary
@@ -497,5 +502,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lyco-cli-windows
-          path: target/release/lyco-cli.exe
+          path: |
+            target/release/lyco-cli.exe
+            target/release/lyco-spine-render.exe
           if-no-files-found: error
