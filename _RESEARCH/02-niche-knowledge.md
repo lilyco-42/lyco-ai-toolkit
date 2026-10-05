@@ -156,3 +156,64 @@ Minecraft Java Edition*），它消费的是 **Bedrock 几何**，不是 BSM。
 - **推荐路径**：本地 Hunyuan3D-2.0 (16GB) 作主力，API 作弹性扩展，避免依赖单一计费源
 
 *— 02 完成 —*
+## 6. Spine 运行时：ROI 结论（2026-10-05 实测）
+
+起因：想给 galgame 做 2D 骨骼角色，用方舟资源测试 Spine 渲染。
+
+### 6.1 硬事实：方舟是 Spine 3.8，不是 4.3
+
+从 `fexli/ArknightsResource` 拉真实文件 `char_002_amiya.skel`（179,880 字节），看头 35 字节：
+
+```
+idx  0 : 1c = 28      ← 长度字节（含终止符，实际 27 字节）
+idx  1..27: 27 字节    ← hash "3zUmVpPXAB+DFpqv9VEzMu6Co8M"
+idx 28 : 07 = 7       ← 长度字节（实际 6 字节）
+idx 29..34: 6 字节     ← "3.8.99"
+```
+
+**长度字节包含终止符**（28 = 27+1，7 = 6+1）。这条格式细节是我第一次读错的。
+
+### 6.2 候选全灭
+
+| 候选 | 星 | 许可 | 能读 3.8? | 结论 |
+|---|---|---|---|---|
+| `Latias94/spine2d` | 17 | Apache-2.0 | ❌ **只支持 4.3 且硬拒绝其他** | 对你的用例不可用 |
+| `jabuwu/rusty_spine` | 83 | **Spine Runtimes License** | ✅（转译自官方 C） | ❌ 商业许可，进不了 MIT |
+| `axieinfinity/spine-rs` | 29 | MIT 外壳 + **spine-c FFI** | ✅ | ❌ 底层的 spine-c 是商业许可 |
+| 官方 spine-c FFI | — | **Spine Runtimes License** | ✅ | ❌ 同上 |
+
+`spine-rs` 的 MIT 只盖住它自己的胶水代码：`.gitmodules` 直接 submodule
+`EsotericSoftware/spine-runtimes`，`spine-sys` 自称 "Bindings for spine-c library"。
+**外层的 MIT 不改变底层运行时的许可。**
+
+证据：`spine2d/src/export_version.rs` 里 `SPINE_RUNTIME_VERSION_PREFIX = "4.3"`，
+配 `binary_rejects_non_43_spine_versions_like_cpp` —— 它是**主动拒绝**，不是解析失败。
+
+### 6.3 结论
+
+> **不存在许可宽松、且能读 Spine 3.8 的 Rust 运行时。**
+> 所有能用的实现都源自官方运行时，而官方运行时是商业许可。
+
+Spine 不是可以自由实现渲染器的开放格式。要正式用，须购买 Spine Editor 授权。
+
+### 6.4 已落地（合法部分）
+
+`lyco-spine` crate（MIT）+ `lyco-cli spine`：
+
+- `spine info <atlas>` —— 页 / region / 是否声明 size、pma
+- `spine normalize <atlas>` —— 从 PNG 头补/修 `size`、加 `pma`、**幂等**
+- `spine version <skel>` —— **读出 .skel 需要的 Spine 版本**，判断运行时兼容性
+
+真实数据验证（`char_002_amiya`）：
+
+| 项 | 结果 |
+|---|---|
+| region 数 | 57（手工核对一致） |
+| 原 atlas | **完全没有 `size` 字段** |
+| 补入 | `size: 512,512`，Python 独立读 IHDR 确认 **512×512** |
+| 副作用 | 后面 57 个 region **逐字节未变**；5595 → 5609 字节（+14） |
+| 幂等 | 二次运行 `changed: false`，SHA256 相同 |
+| 版本探测 | `3.8.99` / `spine 3.x`，正确 |
+
+**资源不进仓库**：方舟美术属鹰角。真实文件只在本机 `.kaggle-scratch/` 用于验证，
+CI 用合成的等价字节。
