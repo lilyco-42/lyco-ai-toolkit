@@ -18,6 +18,36 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
+      # A new crate has to be declared in the Cargo.toml of whoever uses it.
+      # That has been forgotten twice, once per crate, and the compiler only
+      # says so after a full round trip; this says it in a second.
+      - name: declared dependencies cover the imports
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          problems = []
+          for cargo in sorted(pathlib.Path("crates").glob("*/Cargo.toml")):
+              crate = cargo.parent
+              declared = {
+                  name.replace("-", "_")
+                  for name in re.findall(
+                      r"^(lyco-[a-z0-9-]+)\s*=", cargo.read_text(), re.M
+                  )
+              }
+              used = set()
+              for rs in crate.rglob("*.rs"):
+                  used |= set(re.findall(r"^\s*use\s+(lyco_[a-z0-9_]+)", rs.read_text(), re.M))
+              missing = used - declared
+              if missing:
+                  problems.append(f"{crate.name}: uses {sorted(missing)} but declares {sorted(declared)}")
+
+          if problems:
+              print("\n".join(problems))
+              sys.exit(1)
+          print("every lyco crate a source file uses is declared")
+          PY
+
       # Order matters: correctness gates run before the formatting gate so a
       # cosmetic diff can never hide a failing test.
       - name: test
