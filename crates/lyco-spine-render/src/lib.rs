@@ -22,6 +22,8 @@
 
 pub mod raster;
 
+pub use raster::{Anchor, Blend, Fit, Frame, Mesh, Texture};
+
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -83,6 +85,8 @@ pub struct RenderRequest {
     pub animation: Option<String>,
     /// Seconds to advance the pose by.
     pub time: f32,
+    /// How the model sits in the frame. [`Anchor::Footline`] is the PRTS look.
+    pub anchor: Anchor,
 }
 
 impl Default for RenderRequest {
@@ -93,6 +97,7 @@ impl Default for RenderRequest {
             background: [0, 0, 0, 0],
             animation: None,
             time: 0.0,
+            anchor: Anchor::Centre,
         }
     }
 }
@@ -295,6 +300,7 @@ pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
     let fit = raster::Fit {
         margin: 0.06,
         premultiplied_textures: premultiplied,
+        anchor: req.anchor,
     };
     raster::render(
         &meshes,

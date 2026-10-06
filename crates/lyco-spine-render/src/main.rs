@@ -9,7 +9,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
-use lyco_spine_render::{describe, render_to_file, RenderRequest, SpineSource};
+use lyco_spine_render::{describe, render_to_file, Anchor, RenderRequest, SpineSource};
 
 fn usage() -> String {
     [
@@ -20,6 +20,8 @@ fn usage() -> String {
         "options:",
         "  --animation <name>  play an animation; without it, the setup pose",
         "  --time <seconds>   advance the pose (default 0)",
+        "  --anchor <where>   centre (default) or footline, as in 'footline:0.8',",
+        "                     which is how PRTS wiki frames a battle sprite",
         "  --size <WxH>       frame size (default 512x512)",
         "  --background <R,G,B,A>  default 0,0,0,0",
     ]
@@ -96,6 +98,15 @@ fn main() -> Result<()> {
                     None => [0, 0, 0, 0],
                 },
                 animation: flag(&args, "--animation"),
+                anchor: match flag(&args, "--anchor") {
+                    None => Anchor::Centre,
+                    Some(text) => match text.split_once(':') {
+                        Some(("footline", value)) => {
+                            Anchor::Footline(value.parse().context("bad --anchor footline value")?)
+                        }
+                        _ => bail!("--anchor wants 'centre' or 'footline:<0..1>'"),
+                    },
+                },
                 time: match flag(&args, "--time") {
                     Some(text) => text.parse().context("bad --time")?,
                     None => 0.0,

@@ -173,6 +173,8 @@ pub struct Fit {
     pub margin: f32,
     /// True when the textures already have their colour multiplied by alpha.
     pub premultiplied_textures: bool,
+    /// Where the model sits vertically.
+    pub anchor: Anchor,
 }
 
 impl Default for Fit {
@@ -180,8 +182,24 @@ impl Default for Fit {
         Fit {
             margin: 0.06,
             premultiplied_textures: false,
+            anchor: Anchor::Centre,
         }
     }
+}
+
+/// How a model is placed on the vertical axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Anchor {
+    /// Centred in the frame.
+    Centre,
+    /// Standing on a line, given as a fraction of the frame height from the top.
+    ///
+    /// The number matters and is not a matter of taste: a viewer that shows
+    /// characters as if they shared a floor puts their feet well below the
+    /// middle. PRTS wiki uses **0.8** for battle sprites and 0.78 for the base
+    /// view, which is why its characters sit low in the frame instead of
+    /// floating in the centre of it.
+    Footline(f32),
 }
 
 /// Twice the signed area of the triangle `a b c`; also the barycentric weight.
@@ -383,12 +401,19 @@ pub fn render(
     let scale =
         ((width as f32 * (1.0 - margin)) / span_x).min((height as f32 * (1.0 - margin)) / span_y);
     let centre_x = (min_x + max_x) * 0.5;
-    let centre_y = (min_y + max_y) * 0.5;
-    // Skeleton space is Y-up; a frame is Y-down.
+    // Where the model's lowest point lands. The horizontal axis stays centred;
+    // the vertical one is placed, so a standing character can be made to stand.
+    let scaled_height = span_y * scale;
+    let bottom_y = match fit.anchor {
+        Anchor::Centre => height as f32 * 0.5 + scaled_height * 0.5,
+        Anchor::Footline(fraction) => height as f32 * fraction.clamp(0.0, 1.0),
+    };
+    // Skeleton space is Y-up and the model's floor is `min_y`, so mapping that
+    // to `bottom_y` puts everything else above it.
     let to_screen = |p: [f32; 2]| {
         [
             width as f32 * 0.5 + (p[0] - centre_x) * scale,
-            height as f32 * 0.5 - (p[1] - centre_y) * scale,
+            bottom_y - (p[1] - min_y) * scale,
         ]
     };
 
@@ -544,6 +569,39 @@ mod tests {
             x0 >= 4 && y0 >= 4 && x1 <= 35 && y1 <= 35,
             "{x0},{y0},{x1},{y1}"
         );
+    }
+
+    /// A viewer that shows characters as if they shared a floor does not centre
+    /// them. PRTS wiki stands them on 0.8 of the canvas, which is a number this
+    /// reproduces rather than approximates.
+    #[test]
+    fn a_footline_anchor_stands_the_model_on_a_line() {
+        let white = solid(2, 2, [255, 255, 255, 255]);
+        let frame = |anchor| {
+            render(
+                &[quad(UVS)],
+                &[white.clone()],
+                100,
+                100,
+                [0, 0, 0, 0],
+                &Fit {
+                    margin: 0.0,
+                    anchor,
+                    ..Fit::default()
+                },
+            )
+            .expect("render")
+        };
+
+        let centred = frame(Anchor::Centre).opaque_bounds().expect("centred");
+        assert_eq!(centred, (0, 0, 99, 99), "centred fills the frame");
+
+        let standing = frame(Anchor::Footline(0.8))
+            .opaque_bounds()
+            .expect("standing");
+        assert_eq!(standing.3, 80, "the feet are at 0.8 of the height");
+        assert!(standing.1 < centred.1 || standing.1 == 0);
+        assert!(standing.3 < centred.3, "and it sits lower than centred");
     }
 
     #[test]
