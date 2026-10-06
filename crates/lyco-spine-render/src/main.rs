@@ -10,7 +10,8 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
 use lyco_spine_render::{
-    describe, render_animation, render_to_file, rig, Anchor, RenderRequest, SpineSource,
+    describe, parts, render_animation, render_to_file, rig, Anchor, RenderRequest, SpineSource,
+    PARTS,
 };
 
 fn usage() -> String {
@@ -18,6 +19,7 @@ fn usage() -> String {
         "usage:",
         "  lyco-spine-render describe <atlas> <skeleton>",
         "  lyco-spine-render rig      <atlas> <skeleton>",
+        "  lyco-spine-render parts    <atlas> <skeleton> <out-prefix>",
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
         "  lyco-spine-render animate  <atlas> <skeleton> <out.gif> [options]",
         "",
@@ -100,8 +102,8 @@ fn main() -> Result<()> {
             println!("slots:\t{}", info.slots.len());
             println!("animations:\t{}", info.animations.len());
             println!("--bones--");
-            for bone in &info.bones {
-                println!("{bone}");
+            for (bone, parent) in &info.bones {
+                println!("{bone}\t{parent}");
             }
             println!("--slots--");
             for (slot, bone) in &info.slots {
@@ -110,6 +112,41 @@ fn main() -> Result<()> {
             println!("--animations--");
             for (name, seconds) in &info.animations {
                 println!("{name}\t{seconds}");
+            }
+            Ok(())
+        }
+        Some("parts") => {
+            let (atlas, skeleton, out) = match (args.get(1), args.get(2), args.get(3)) {
+                (Some(a), Some(s), Some(o)) => (a, s, o),
+                _ => bail!("{}", usage()),
+            };
+            let (width, height) = match flag(&args, "--size") {
+                Some(text) => parse_size(&text)?,
+                None => (512, 512),
+            };
+            let req = RenderRequest {
+                width,
+                height,
+                animation: flag(&args, "--animation"),
+                time: match flag(&args, "--time") {
+                    Some(text) => text.parse().context("bad --time")?,
+                    None => 0.0,
+                },
+                ..RenderRequest::default()
+            };
+            let src = SpineSource::new(atlas, skeleton);
+            let labelled = parts(&src, &req)?;
+            let prefix = PathBuf::from(out);
+            let picture = PathBuf::from(format!("{}_rgb.png", prefix.display()));
+            let mask = PathBuf::from(format!("{}_labels.png", prefix.display()));
+            labelled.frame.save(&picture)?;
+            labelled.labels.save(&mask)?;
+            println!("wrote {}", picture.display());
+            println!("wrote {}", mask.display());
+            // Named rather than numbered: a caller checking whether a skeleton
+            // has a left forearm should not need the constant beside it.
+            for (name, count) in PARTS.iter().zip(&labelled.counts) {
+                println!("  {name}\t{count}");
             }
             Ok(())
         }

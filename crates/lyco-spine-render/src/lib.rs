@@ -25,6 +25,7 @@ pub mod raster;
 pub use raster::{Anchor, Blend, Fit, Frame, Mesh, Texture};
 
 use anyhow::{bail, Context, Result};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -267,8 +268,12 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
 /// no amount of training data fixes that.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rig {
-    /// Bone names, in the order the skeleton declares them.
-    pub bones: Vec<String>,
+    /// Bones as `(name, parent)`, in the order the skeleton declares them.
+    ///
+    /// The parent is half the point: a rig spells the right arm `F_R_Arm_3`
+    /// and the left shin `F_L_Leg3`, so a name alone does not tell you they are
+    /// an arm and a shin. Their parents do.
+    pub bones: Vec<(String, String)>,
     /// Slots, as `(slot name, bone it hangs on)`.
     ///
     /// A slot name alone is worthless as a label - it is `F_Hair_O` or
@@ -289,7 +294,16 @@ pub struct Rig {
 pub fn rig(src: &SpineSource) -> Result<Rig> {
     let data = load(src)?;
     Ok(Rig {
-        bones: data.bones().map(|bone| bone.name().to_string()).collect(),
+        bones: data
+            .bones()
+            .map(|bone| {
+                let parent = bone
+                    .parent()
+                    .map(|parent| parent.name().to_string())
+                    .unwrap_or_default();
+                (bone.name().to_string(), parent)
+            })
+            .collect(),
         slots: data
             .slots()
             .map(|slot| (slot.name().to_string(), slot.bone_data().name().to_string()))
@@ -298,6 +312,313 @@ pub fn rig(src: &SpineSource) -> Result<Rig> {
             .animations()
             .map(|clip| (clip.name().to_string(), clip.duration()))
             .collect(),
+    })
+}
+
+/// The body parts a human-shaped operator rig carries, in labelled order.
+///
+/// Measured rather than assumed: these are the bone names that turned up in at
+/// least half of the 305 local operator skeletons, and they are a whole body -
+/// trunk, head, and both arms and legs broken at every joint. Enemies share
+/// nothing like this, because a wolf and a helicopter are not the same shape.
+pub const PARTS: [&str; 17] = [
+    "root",
+    "hip",
+    "waist",
+    "chest",
+    "head",
+    "l_arm",
+    "l_forearm",
+    "l_hand",
+    "r_arm",
+    "r_forearm",
+    "r_hand",
+    "l_leg",
+    "l_calf",
+    "l_foot",
+    "r_leg",
+    "r_calf",
+    "r_foot",
+];
+
+/// Which side of the body a bone name belongs to, once it says one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Side {
+    None,
+    Left,
+    Right,
+}
+
+/// Strip everything from a bone name that is spelling rather than meaning.
+///
+/// Every rule here was measured against the 305 local operator rigs, not
+/// invented: the long tail of unmatched bones is dominated by four mechanical
+/// patterns, and each of them is the artist's bookkeeping rather than anatomy.
+///
+/// - a facing prefix: `F_L_Arm` and `B_L_Arm` are the same arm, seen from two
+///   sides;
+/// - a trailing copy counter: `hip2`, `head_01`, `F_R_Arm_3`, `l_leg3` - the
+///   number says which duplicate of the part this is, not which part it is;
+/// - a trailing layer tag: `F_Chest_B`, `F_Waist_A`, `F_R_Calf_B` - artists
+///   split one part across front and back texture layers, and the letter says
+///   which layer, never which part;
+/// - an IK suffix: `r_foot_ik` is the foot, driven by a solver instead of by
+///   keyframes;
+/// - the side written at the wrong end: `calf_l` means `l_calf`, some rigs
+///   just spell it back to front.
+fn bone_core(bone: &str) -> String {
+    let stripped = ["F_", "B_", "f_", "b_"]
+        .iter()
+        .find_map(|prefix| bone.strip_prefix(prefix))
+        .unwrap_or(bone)
+        .to_lowercase();
+    let without_ik = stripped.strip_suffix("_ik").unwrap_or(&stripped);
+    let without_counter = without_ik
+        .trim_end_matches(|c: char| c.is_ascii_digit())
+        .trim_end_matches('_');
+    // One layer tag, then the counter under it (`_a2` strips to `_a` first by
+    // the digit pass above). A second pass would start eating real names.
+    let without_layer = [
+        without_counter.strip_suffix("_a"),
+        without_counter.strip_suffix("_b"),
+        without_counter.strip_suffix("_c"),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .unwrap_or(without_counter);
+    without_layer.to_string()
+}
+
+/// Split the side off a bone-core name, wherever the rig wrote it.
+///
+/// `l_hand`, `hand_l` and `hand` come back as (`Left`, `hand`), (`Left`,
+/// `hand`) and (`None`, `hand`). The prefix is tried first, so `l_hand_b`
+/// keeps its trailing layer tag instead of misreading it as a side.
+fn bone_side(core: &str) -> (Side, &str) {
+    if let Some(rest) = core.strip_prefix("l_") {
+        return (Side::Left, rest);
+    }
+    if let Some(rest) = core.strip_prefix("r_") {
+        return (Side::Right, rest);
+    }
+    if let Some(rest) = core.strip_suffix("_l") {
+        return (Side::Left, rest);
+    }
+    if let Some(rest) = core.strip_suffix("_r") {
+        return (Side::Right, rest);
+    }
+    (Side::None, core)
+}
+
+/// Whether a bone carries something the character holds or wears rather than
+/// the character itself.
+///
+/// Measured, again: the biggest unmatched bucket after the mechanical rules is
+/// `weapon*` at a few hundred slots - crossbows, scythes, drones, batteries.
+/// None of that is a body part, and labelling it as the hand that grips it
+/// would teach a model that swords are arms. Matched per underscore-separated
+/// segment so `twintail` stays hair while `c_weapon2` is caught.
+pub fn is_prop(bone: &str) -> bool {
+    let core = bone_core(bone);
+    ["weapon", "tail", "drone", "battery", "saw"]
+        .iter()
+        .any(|token| core.split('_').any(|segment| segment == *token))
+}
+
+/// Which [`PARTS`] entry a bone name means, if any.
+///
+/// Names are resolved through [`bone_core`] and [`bone_side`], so every
+/// mechanical spelling variant matches its part directly. On top of that sit
+/// the synonyms the census actually turned up: face, ears, eyes, hair, mouth,
+/// horns and a muzzle all hang on the head; a thigh is the leg; a palm is the
+/// hand; the pelvis is the hip; shoes are worn on the feet.
+///
+/// A side-specific part with no side on the name - a bare `arm` or `foot` -
+/// matches nothing, because guessing a side is how left and right get swapped.
+pub fn part_of(bone: &str) -> Option<usize> {
+    let core = bone_core(bone);
+    let (side, base) = bone_side(&core);
+    if let Some(part) = PARTS.iter().position(|part| match side {
+        Side::None => *part == base,
+        Side::Left => *part == format!("l_{base}"),
+        Side::Right => *part == format!("r_{base}"),
+    }) {
+        return Some(part);
+    }
+
+    // Not spelled as a part. Whether it is a synonym of one is decided on the
+    // side-less base: `shoes_l` is a left foot, but a bare `face` is a head
+    // and no side is needed for that.
+    let part = match base {
+        "face" | "ear" | "erduo" | "eye" | "eyebrow" | "hair" | "mouth" | "horn" | "muzzle" => {
+            "head"
+        }
+        "thigh" => "leg",
+        "palm" => "hand",
+        "pelvis" => "hip",
+        "shoe" | "shoes" => "foot",
+        _ => return None,
+    };
+    let named = match part {
+        // Head and hip sit on the midline: the side on `l_ear` says where the
+        // ear hangs, not that it belongs to a left head.
+        "head" | "hip" => part.to_string(),
+        _ => match side {
+            Side::None => return None,
+            Side::Left => format!("l_{part}"),
+            Side::Right => format!("r_{part}"),
+        },
+    };
+    PARTS.iter().position(|part| *part == named)
+}
+
+/// Which part a bone belongs to, counting the one it hangs under.
+///
+/// Exact names are not enough on their own. A rig spells the right arm
+/// `F_R_Arm_3` and the left shin `F_L_Leg3`, so matching the name literally
+/// misses both; but both hang under a bone that *is* spelled the canonical way,
+/// and walking up the parent chain finds it. That is what a rig means by a
+/// hierarchy in the first place: the fingers are under the hand, the hand under
+/// the forearm, the forearm under the arm.
+///
+/// The walk stops dead at a prop bone. A grip attached to a weapon is part of
+/// the weapon; letting the chain carry it past the weapon onto the hand would
+/// paint the whole sword as fingers, which is exactly the contamination the
+/// prop rule exists to prevent.
+///
+/// The chain is given as a plain name-to-parent table rather than walked
+/// through the runtime's borrow-heavy accessors.
+pub fn part_of_bone(bone: &str, parents: &BTreeMap<String, String>) -> Option<usize> {
+    // A thing hanging on a prop is part of the prop, whoever is holding it.
+    if is_prop(bone) {
+        return None;
+    }
+    // An exact hit wins even when it is `root`, because a slot really can hang
+    // straight off it.
+    if let Some(exact) = part_of(bone) {
+        return Some(exact);
+    }
+    let mut current = parents.get(bone).cloned();
+    // Long enough to reach the top of any real rig, short enough that a cycle
+    // in a malformed one cannot hang.
+    for _ in 0..64 {
+        let name = current?;
+        if is_prop(&name) {
+            return None;
+        }
+        match part_of(&name) {
+            // `root` is where a rig keeps things it has not filed, not a body
+            // part, so it never answers for a descendant.
+            Some(part) if part != 0 => return Some(part),
+            _ => current = parents.get(&name).cloned(),
+        }
+    }
+    None
+}
+
+/// Every bone's parent, by name.
+pub fn bone_parents(data: &SkeletonData) -> BTreeMap<String, String> {
+    data.bones()
+        .filter_map(|bone| {
+            let child = bone.name().to_string();
+            bone.parent()
+                .map(|parent| (child, parent.name().to_string()))
+        })
+        .collect()
+}
+
+/// A drawn frame and, pixel for pixel, which body part it belongs to.
+pub struct Parts {
+    /// The character, every part visible.
+    pub frame: raster::Frame,
+    /// `0` where nothing was drawn, otherwise the 1-based index into [`PARTS`].
+    ///
+    /// Written to every channel, so it opens as a greyscale label image.
+    pub labels: raster::Frame,
+    /// Pixels per part, in [`PARTS`] order. A part that drew nothing is a part
+    /// this skeleton does not have, and it shows up here as a zero.
+    pub counts: Vec<u32>,
+}
+
+/// Draw a pose and label every pixel of it with the body part it came from.
+///
+/// There is no annotation in a Spine file, so the labelling is recovered from
+/// the rig itself: every slot hangs on a bone, and a bone named `l_hand` is the
+/// left hand however the artist happened to spell the twelve texture shards
+/// that make it up. Hiding every slot but one part and drawing again turns that
+/// fact into a mask, which is the one thing worth having and the one thing no
+/// amount of the artist's naming conventions would have given us directly.
+///
+/// Every mask is drawn into the same box as the picture, so the labels line up
+/// with the pixels they describe instead of merely resembling them.
+pub fn parts(src: &SpineSource, req: &RenderRequest) -> Result<Parts> {
+    let data = load(src)?;
+    let textures = load_textures(&src.atlas)?;
+    let state = Arc::new(AnimationStateData::new(data.clone()));
+    let mut controller = SkeletonController::new(data.clone(), state);
+    if let Some(name) = &req.animation {
+        start_animation(&mut controller, &data, name)?;
+    }
+    advance(&mut controller, req.time.max(0.0));
+
+    // One box for the picture and all seventeen masks.
+    let bounds = measure_current(&mut controller);
+
+    // Decided once: the bone a slot hangs on does not move with the pose.
+    let parents = bone_parents(&data);
+    let part_by_slot: Vec<Option<usize>> = controller
+        .skeleton
+        .slots()
+        .map(|slot| part_of_bone(slot.data().bone_data().name(), &parents))
+        .collect();
+    if !part_by_slot.iter().any(Option::is_some) {
+        bail!(
+            "no slot in this skeleton hangs on any of the {} body parts; \
+             it is probably not human-shaped",
+            PARTS.len()
+        );
+    }
+
+    let frame = draw_current(&mut controller, &textures, req, bounds)?;
+    let mut labels = raster::Frame::new(req.width, req.height, [0, 0, 0, 0])?;
+    let mut counts = vec![0u32; PARTS.len()];
+
+    for (index, _) in PARTS.iter().enumerate() {
+        for (mut slot, part) in controller.skeleton.slots_mut().zip(part_by_slot.iter()) {
+            slot.color_mut().a = f32::from(*part == Some(index));
+        }
+        let mask = draw_current(&mut controller, &textures, req, bounds)?;
+
+        // Anything the part covered is opaque in its own mask and transparent
+        // in everyone else's, so alpha alone separates it.
+        for (pixel, value) in labels.pixels.as_chunks_mut::<4>().0.iter_mut().zip(
+            mask.pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|pixel| u8::from(pixel[3] > 0)),
+        ) {
+            if value != 0 {
+                let id = (index + 1) as u8;
+                pixel[0] = id;
+                pixel[1] = id;
+                pixel[2] = id;
+                pixel[3] = id;
+                counts[index] += 1;
+            }
+        }
+    }
+
+    // Leave the controller as it was found, in case a caller keeps using it.
+    for mut slot in controller.skeleton.slots_mut() {
+        slot.color_mut().a = 1.0;
+    }
+
+    Ok(Parts {
+        frame,
+        labels,
+        counts,
     })
 }
 
@@ -581,5 +902,52 @@ mod tests {
     #[test]
     fn a_header_that_cannot_be_read_is_left_to_the_runtime() {
         assert!(check_version(&source("empty.skel", &[])).is_ok());
+    }
+
+    #[test]
+    fn mechanical_spelling_variants_resolve_to_their_part() {
+        // Each row is a pattern the 305-rig census actually produced.
+        assert_eq!(part_of("l_arm"), Some(5));
+        assert_eq!(part_of("F_R_Arm_3"), Some(8)); // trailing copy counter
+        assert_eq!(part_of("l_leg3"), Some(11)); // counter without underscore
+        assert_eq!(part_of("hip2"), Some(1)); // numbered duplicate
+        assert_eq!(part_of("head_01"), Some(4)); // zero-padded counter
+        assert_eq!(part_of("calf_l"), Some(12)); // side written at the wrong end
+        assert_eq!(part_of("r_foot_ik"), Some(16)); // solver-driven bone
+        assert_eq!(part_of("F_R_Calf_B"), Some(15)); // back texture layer
+        assert_eq!(part_of("F_Waist_A"), Some(2)); // front layer of the waist
+        assert_eq!(part_of("F_L_Arm_A"), Some(5)); // layer tag under a side
+    }
+
+    #[test]
+    fn synonyms_resolve_to_the_part_they_hang_on() {
+        assert_eq!(part_of("F_Face"), Some(4)); // humus spells the head this way
+        assert_eq!(part_of("l_ear"), Some(4));
+        assert_eq!(part_of("erduo1"), Some(4)); // pinyin, plus a counter
+        assert_eq!(part_of("l_thigh2"), Some(11));
+        assert_eq!(part_of("l_palm2"), Some(7));
+        assert_eq!(part_of("pelvis"), Some(1));
+        assert_eq!(part_of("shoes_l"), Some(13));
+    }
+
+    #[test]
+    fn a_sideless_limb_is_refused_rather_than_guessed() {
+        // Guessing a side is how left and right get swapped, so a bare limb
+        // name matches nothing even though the word itself is known.
+        assert_eq!(part_of("arm"), None);
+        assert_eq!(part_of("hand"), None);
+        assert_eq!(part_of("thigh"), None);
+    }
+
+    #[test]
+    fn props_are_never_body_parts() {
+        assert!(is_prop("weapon_kc"));
+        assert!(is_prop("c_weapon2"));
+        assert!(is_prop("weapon_b_aa"));
+        assert!(is_prop("tail"));
+        assert!(is_prop("saw5"));
+        assert!(is_prop("drone"));
+        // Segment match, not substring: twintails are hair.
+        assert!(!is_prop("twintail"));
     }
 }
