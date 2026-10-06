@@ -319,3 +319,47 @@ Skill_2  Skill_2_Begin  Skill_2_End  Skill_Begin  Skill_End  Start  Stun
 授权**下构建，产物只进你这次 run。工作流开头会打印许可提示。
 
 已实测：`gh workflow run 'build from source' -f target=lyco-spine-render` → success。
+## F3 输入侧扩展：Wavefront OBJ ✅
+
+原本 `convert` 只能吃 GLB。而 Hunyuan3D / TRELLIS 常常**只**输出 OBJ，
+从游戏客户端抽 mesh 的工具（UnityPy 的 OBJ 导出）也只给 OBJ。
+
+新增 `lyco-bsm::obj`（MIT，自己实现）+ CLI：
+
+```bash
+lyco-cli bsm obj-info <file.obj>
+lyco-cli bsm from-obj <file.obj> --out model.geo.json --texture model.png
+```
+
+### 覆盖的格式怪癖（来自真实文件，不是规范）
+
+- `v x y z r g b [a]` —— 顶点色扩展，UnityPy 的导出器就写这个
+- **面不一定是三角形** → 扇形拆分，而不是拒绝
+- **负数索引**（从已读数量往回数）
+- `(v, vt, vn)` 三元组去重
+- `g` 分组（只输出含面的组）、`usemtl` / 注释忽略
+
+### 真实文件实测
+
+| 文件 | 规模 | 结果 |
+|---|---|---|
+| UnityPy 导出的 OBJ | 724 v / 362 f | 解析正确，`normals: false` |
+| Stanford cow | 2903 v / 5804 f | **5804 → 2707 voxels → 420 boxes**，校验通过 |
+
+### 被真实文件抓出的 bug
+
+UnityPy 导出的 OBJ 面写成 `f 3/3/3 2/2/2 1/1/1`，**但整个文件 `vn` 行数为 0**。
+我的第一版信任索引，于是**声称法线存在**（全填 `[0,1,0]`）—— 比不报更糟。
+已改为：引用越界就**丢掉整个属性**，并加了照该形态写的回归测试。
+
+### 环境
+
+`uv venv` + `UnityPy 1.25.4` + `lz4 4.4.5` + `Pillow 12.3.0`（隔离环境）。
+UnityPy 的测试样本（`char_118_yuki.ab` 等）走 `media.githubusercontent.com` 取 LFS 内容。
+
+### 没做成的
+
+**方舟 3D mesh 拿不到。** `char_118_yuki.ab` 是音频包（35 个 AudioClip，无 mesh）；
+`ArknightsGameResource`（589★）只有 2D；`Ark-Models` 只有 Spine。
+Stronghold 那条抽取管线要**本机装好的方舟客户端**，本机没有。
+本次验证用的是 UnityPy 自带测试样本和公共 3D 测试网格，**都没有进仓库**。
