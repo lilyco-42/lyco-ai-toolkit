@@ -9,15 +9,20 @@
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
-use lyco_spine_render::{describe, render_to_file, Anchor, RenderRequest, SpineSource};
+use lyco_spine_render::{
+    describe, render_animation, render_to_file, Anchor, RenderRequest, SpineSource,
+};
 
 fn usage() -> String {
     [
         "usage:",
         "  lyco-spine-render describe <atlas> <skeleton>",
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
+        "  lyco-spine-render animate  <atlas> <skeleton> <out.gif> [options]",
         "",
         "options:",
+        "  --frames <n>       animate: how many frames (default 24)",
+        "  --fps <n>          animate: frames per second (default 12)",
         "  --animation <name>  play an animation; without it, the setup pose",
         "  --time <seconds>   advance the pose (default 0)",
         "  --anchor <where>   centre (default) or footline, as in 'footline:0.8',",
@@ -123,6 +128,55 @@ fn main() -> Result<()> {
                 }
                 None => println!("warning: nothing was drawn"),
             }
+            Ok(())
+        }
+        Some("animate") => {
+            let (atlas, skeleton, out) = match (args.get(1), args.get(2), args.get(3)) {
+                (Some(a), Some(s), Some(o)) => (a, s, o),
+                _ => bail!("{}", usage()),
+            };
+            let (width, height) = match flag(&args, "--size") {
+                Some(text) => parse_size(&text)?,
+                None => (512, 512),
+            };
+            let req = RenderRequest {
+                width,
+                height,
+                background: match flag(&args, "--background") {
+                    Some(text) => parse_background(&text)?,
+                    None => [0, 0, 0, 0],
+                },
+                animation: flag(&args, "--animation"),
+                anchor: match flag(&args, "--anchor") {
+                    None => Anchor::Centre,
+                    Some(text) => match text.split_once(':') {
+                        Some(("footline", value)) => {
+                            Anchor::Footline(value.parse().context("bad --anchor footline value")?)
+                        }
+                        _ => bail!("--anchor wants 'centre' or 'footline:<0..1>'"),
+                    },
+                },
+                time: match flag(&args, "--time") {
+                    Some(text) => text.parse().context("bad --time")?,
+                    None => 0.0,
+                },
+            };
+            let frames = match flag(&args, "--frames") {
+                Some(text) => text.parse().context("bad --frames")?,
+                None => 24,
+            };
+            let fps = match flag(&args, "--fps") {
+                Some(text) => text.parse().context("bad --fps")?,
+                None => 12,
+            };
+
+            let src = SpineSource::new(atlas, skeleton);
+            let into = PathBuf::from(out);
+            let written = render_animation(&src, &req, &into, frames, fps)?;
+            println!(
+                "wrote {} ({written} frames at {fps} fps, {width}x{height})",
+                into.display()
+            );
             Ok(())
         }
         _ => bail!("{}", usage()),

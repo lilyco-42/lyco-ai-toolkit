@@ -319,6 +319,105 @@ pub fn render_to_file(src: &SpineSource, req: &RenderRequest, out: &Path) -> Res
     Ok(frame)
 }
 
+/// Turn Spine's posed renderables into the rasteriser's plain meshes.
+fn to_meshes(renderables: &[rusty_spine::SkeletonRenderable]) -> Vec<raster::Mesh> {
+    renderables
+        .iter()
+        .map(|r| raster::Mesh {
+            vertices: r.vertices.clone(),
+            uvs: r.uvs.clone(),
+            indices: r.indices.clone(),
+            color: [r.color.r, r.color.g, r.color.b, r.color.a],
+            blend: match r.blend_mode {
+                BlendMode::Normal => raster::Blend::Normal,
+                BlendMode::Additive => raster::Blend::Additive,
+                BlendMode::Multiply => raster::Blend::Multiply,
+                BlendMode::Screen => raster::Blend::Screen,
+            },
+            texture: 0,
+        })
+        .collect()
+}
+
+/// Draw a slice of the animation as an animated GIF; returns the frame count.
+///
+/// A still frame answers "what does this model look like". It cannot answer
+/// "does it move", which is the question anyone actually has about an
+/// animation - and the reason a desktop pet is animated rather than a picture
+/// with a menu.
+///
+/// The pose advances by exactly one frame interval per frame, through the same
+/// fixed-step `update` the single-shot path uses, so frame N here is the same
+/// image `render` would produce at the same time.
+pub fn render_animation(
+    src: &SpineSource,
+    req: &RenderRequest,
+    out: &Path,
+    frames: u32,
+    fps: u32,
+) -> Result<u32> {
+    if frames == 0 {
+        bail!("an animation needs at least one frame");
+    }
+    if fps == 0 {
+        bail!("an animation needs a frame rate above zero");
+    }
+
+    let data = load(src)?;
+    let state = Arc::new(AnimationStateData::new(data.clone()));
+    let mut controller = SkeletonController::new(data.clone(), state);
+    if let Some(name) = &req.animation {
+        start_animation(&mut controller, &data, name)?;
+    }
+    // Reach the requested start time first, so frame 0 is the pose asked for.
+    advance(&mut controller, req.time.max(0.0));
+
+    let textures = load_textures(&src.atlas)?;
+    if textures.len() != 1 {
+        bail!(
+            "this build draws single-page atlases, and {} has {} pages",
+            src.atlas.display(),
+            textures.len()
+        );
+    }
+
+    let step = 1.0f32 / fps as f32;
+    let mut file =
+        std::fs::File::create(out).with_context(|| format!("cannot create {}", out.display()))?;
+    let delay = image::Delay::from_numer_denom_ms(1000, fps);
+
+    {
+        let mut encoder = image::codecs::gif::GifEncoder::new(&mut file);
+        encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+        for _ in 0..frames {
+            controller.update(step);
+            let renderables = controller.renderables();
+            if renderables.is_empty() {
+                bail!("the skeleton posed to nothing; does the atlas match?");
+            }
+            let premultiplied = renderables.iter().any(|r| r.premultiplied_alpha);
+            let meshes = to_meshes(&renderables);
+            let fit = raster::Fit {
+                margin: 0.06,
+                premultiplied_textures: premultiplied,
+                anchor: req.anchor,
+            };
+            let frame = raster::render(
+                &meshes,
+                &textures,
+                req.width,
+                req.height,
+                req.background,
+                &fit,
+            )?;
+            let rgba = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels)
+                .context("the frame buffer does not match its dimensions")?;
+            encoder.encode_frame(image::Frame::from_parts(rgba, 0, 0, delay))?;
+        }
+    }
+    Ok(frames)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
