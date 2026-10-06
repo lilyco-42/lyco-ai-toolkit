@@ -327,10 +327,66 @@ pub fn convert_glb(glb: &Glb, cfg: &ConvertConfig) -> Result<Conversion> {
     if triangles.is_empty() {
         bail!("the GLB contains no triangles to convert");
     }
+    convert_triangles(&triangles, cfg)
+}
+
+/// Convert a Wavefront OBJ into Bedrock geometry plus its texture.
+///
+/// OBJ has no scene graph, so unlike a GLB there is nothing to walk: the
+/// vertices are already in the file's own space.
+pub fn convert_obj(mesh: &crate::obj::ObjMesh, cfg: &ConvertConfig) -> Result<Conversion> {
+    let triangles = collect_obj_triangles(mesh)?;
+    if triangles.is_empty() {
+        bail!("the OBJ contains no triangles to convert");
+    }
+    convert_triangles(&triangles, cfg)
+}
+
+/// Turn an OBJ's triangles into world-space triangles, keeping vertex colour.
+pub fn collect_obj_triangles(mesh: &crate::obj::ObjMesh) -> Result<Vec<Triangle>> {
+    let mut triangles = Vec::with_capacity(mesh.triangle_count());
+    for face in mesh.indices.as_chunks::<3>().0 {
+        let (i0, i1, i2) = (face[0] as usize, face[1] as usize, face[2] as usize);
+        let count = mesh.positions.len();
+        if i0 >= count || i1 >= count || i2 >= count {
+            bail!("a face indexes a vertex that does not exist");
+        }
+        // A mesh with no colour in the file is mid grey rather than black, so a
+        // converted model is visible instead of a silhouette.
+        let color = mesh
+            .colors
+            .as_ref()
+            .and_then(|colors| colors.get(i0))
+            .map(|c| {
+                [
+                    (c[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (c[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (c[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                ]
+            })
+            .unwrap_or([128, 128, 128]);
+        triangles.push(Triangle {
+            a: mesh.positions[i0],
+            b: mesh.positions[i1],
+            c: mesh.positions[i2],
+            color,
+        });
+    }
+    Ok(triangles)
+}
+
+/// Convert world-space triangles into Bedrock geometry plus its texture.
+///
+/// Everything after the triangles is the same whatever they came from, which is
+/// why GLB and OBJ share this.
+pub fn convert_triangles(triangles: &[Triangle], cfg: &ConvertConfig) -> Result<Conversion> {
+    if triangles.is_empty() {
+        bail!("there are no triangles to convert");
+    }
     let voxel_cfg = VoxelConfig {
         resolution: cfg.resolution.max(1),
     };
-    let grid = voxelize_surface(&triangles, &voxel_cfg)
+    let grid = voxelize_surface(triangles, &voxel_cfg)
         .context("the mesh is degenerate, so it cannot be voxelised")?;
     let boxes = merge_boxes(&grid);
     if boxes.is_empty() {

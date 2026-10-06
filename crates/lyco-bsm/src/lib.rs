@@ -15,22 +15,28 @@
 //!
 //!   * [`bedrock`] - the Bedrock geometry data model, writer and validator
 //!   * [`glb`] - the GLB (binary glTF 2.0) reader that feeds conversion
+//!   * [`obj`] - a Wavefront OBJ reader, for the tools that emit only that
 //!   * [`voxel`] - surface voxelisation and greedy box merging
-//!   * [`convert`] - GLB to Bedrock geometry, with a generated texture
+//!   * [`convert`] - a mesh to Bedrock geometry, with a generated texture
 //!   * [`humanoid`] - the standard player model built from the skin layout (F2)
 
 pub mod bedrock;
 pub mod convert;
 pub mod glb;
 pub mod humanoid;
+pub mod obj;
 pub mod voxel;
 
 pub use bedrock::{
     Bone, Cube, Description, FaceUv, Geometry, GeometryFile, Problem, Uv, FACES, FORMAT_VERSION,
 };
-pub use convert::{collect_world_triangles, convert_glb, Conversion, ConvertConfig};
+pub use convert::{
+    collect_obj_triangles, collect_world_triangles, convert_glb, convert_obj, convert_triangles,
+    Conversion, ConvertConfig,
+};
 pub use glb::{Glb, Gltf};
 pub use humanoid::{player_file, player_geometry, HAT_INFLATE, OVERLAY_INFLATE, PLAYER_HEIGHT};
+pub use obj::{parse_obj, Group, ObjMesh};
 pub use voxel::{merge_boxes, voxelize_surface, Box3, Grid, Triangle, VoxelConfig};
 
 #[cfg(test)]
