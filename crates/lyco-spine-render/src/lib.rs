@@ -269,11 +269,19 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
 pub struct Rig {
     /// Bone names, in the order the skeleton declares them.
     pub bones: Vec<String>,
+    /// Slots, as `(slot name, bone it hangs on)`.
+    ///
+    /// A slot name alone is worthless as a label - it is `F_Hair_O` or
+    /// `F_L_Hand_B_12`, one texture shard out of dozens. The bone it hangs on
+    /// is the semantic part: every shard on `l_hand` is the left hand. That
+    /// pairing is the only free part labelling a Spine file carries, and it is
+    /// what makes a labelled training set out of somebody else's art possible.
+    pub slots: Vec<(String, String)>,
     /// Animation clips and their duration in seconds.
     pub animations: Vec<(String, f32)>,
 }
 
-/// Report the bones and animation clips a skeleton declares.
+/// Report the bones, slots and animation clips a skeleton declares.
 ///
 /// Unlike [`describe`] this does not pose the skeleton, so it says nothing
 /// about meshes; it is the cheap half, and the half a caller comparing two
@@ -282,6 +290,10 @@ pub fn rig(src: &SpineSource) -> Result<Rig> {
     let data = load(src)?;
     Ok(Rig {
         bones: data.bones().map(|bone| bone.name().to_string()).collect(),
+        slots: data
+            .slots()
+            .map(|slot| (slot.name().to_string(), slot.bone_data().name().to_string()))
+            .collect(),
         animations: data
             .animations()
             .map(|clip| (clip.name().to_string(), clip.duration()))

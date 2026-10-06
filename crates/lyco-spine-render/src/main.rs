@@ -97,10 +97,15 @@ fn main() -> Result<()> {
             // Tab-separated, so a caller comparing rigs does not have to parse
             // prose: one bone per line, then one "name <tab> seconds" per clip.
             println!("bones:\t{}", info.bones.len());
+            println!("slots:\t{}", info.slots.len());
             println!("animations:\t{}", info.animations.len());
             println!("--bones--");
             for bone in &info.bones {
                 println!("{bone}");
+            }
+            println!("--slots--");
+            for (slot, bone) in &info.slots {
+                println!("{slot}\t{bone}");
             }
             println!("--animations--");
             for (name, seconds) in &info.animations {
