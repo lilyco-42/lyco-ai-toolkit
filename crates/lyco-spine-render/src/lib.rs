@@ -345,6 +345,7 @@ fn draw_current(
 
     let fit = raster::Fit {
         premultiplied_textures: premultiplied,
+        anchor: req.anchor,
         bounds,
         ..raster::Fit::default()
     };
