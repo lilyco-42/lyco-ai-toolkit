@@ -398,8 +398,18 @@ pub fn render(
     let span_x = (max_x - min_x).max(1e-6);
     let span_y = (max_y - min_y).max(1e-6);
     let margin = fit.margin.clamp(0.0, 0.9);
-    let scale =
-        ((width as f32 * (1.0 - margin)) / span_x).min((height as f32 * (1.0 - margin)) / span_y);
+    // A footline does not merely move the model, it changes how much room the
+    // model has: only the part of the frame above the line is usable, or the
+    // head leaves the top. Treating the line as decoration over a full-height
+    // fit is how a first attempt decapitated the character.
+    let usable_height = match fit.anchor {
+        Anchor::Centre => height as f32 * (1.0 - margin),
+        Anchor::Footline(fraction) => {
+            height as f32 * fraction.clamp(0.0, 1.0) - height as f32 * margin
+        }
+    }
+    .max(1.0);
+    let scale = ((width as f32 * (1.0 - margin)) / span_x).min(usable_height / span_y);
     let centre_x = (min_x + max_x) * 0.5;
     // Where the model's lowest point lands. The horizontal axis stays centred;
     // the vertical one is placed, so a standing character can be made to stand.
