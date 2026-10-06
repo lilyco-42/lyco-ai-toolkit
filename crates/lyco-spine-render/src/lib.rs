@@ -260,7 +260,7 @@ pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
     advance(&mut controller, req.time.max(0.0));
     let textures = load_textures(&src.atlas)?;
     check_pages(&src.atlas, &textures)?;
-    draw_current(&controller, &textures, req)
+    draw_current(&mut controller, &textures, req)
 }
 
 /// Refuse a multi-page atlas, naming why.
@@ -284,7 +284,9 @@ fn check_pages(atlas: &Path, textures: &[raster::Texture]) -> Result<()> {
 /// nothing about the drawing. Letting the iterator's type be inferred avoids
 /// the question entirely.
 fn draw_current(
-    controller: &SkeletonController,
+    // Mutable, because asking the runtime for the posed renderables is what
+    // makes it compute them; it is not a read.
+    controller: &mut SkeletonController,
     textures: &[raster::Texture],
     req: &RenderRequest,
 ) -> Result<raster::Frame> {
@@ -380,7 +382,7 @@ pub fn render_animation(
         encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
         for _ in 0..frames {
             controller.update(step);
-            let frame = draw_current(&controller, &textures, req)?;
+            let frame = draw_current(&mut controller, &textures, req)?;
             let rgba = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels)
                 .context("the frame buffer does not match its dimensions")?;
             encoder.encode_frame(image::Frame::from_parts(rgba, 0, 0, delay))?;
