@@ -580,7 +580,7 @@ mod tests {
         let frame = |anchor| {
             render(
                 &[quad(UVS)],
-                &[white.clone()],
+                std::slice::from_ref(&white),
                 100,
                 100,
                 [0, 0, 0, 0],
