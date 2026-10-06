@@ -258,24 +258,39 @@ pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
         start_animation(&mut controller, &data, name)?;
     }
     advance(&mut controller, req.time.max(0.0));
-    let renderables = controller.renderables();
-    if renderables.is_empty() {
-        bail!(
-            "the skeleton posed to nothing; does {} match {}?",
-            src.atlas.display(),
-            src.skeleton.display()
-        );
-    }
-
     let textures = load_textures(&src.atlas)?;
+    check_pages(&src.atlas, &textures)?;
+    draw_current(&controller, &textures, req)
+}
+
+/// Refuse a multi-page atlas, naming why.
+fn check_pages(atlas: &Path, textures: &[raster::Texture]) -> Result<()> {
     if textures.len() != 1 {
         // Multi-page would need the runtime's texture callback to say which page
         // each attachment landed on. Arknights atlases are single-page.
         bail!(
             "this build draws single-page atlases, and {} has {} pages",
-            src.atlas.display(),
+            atlas.display(),
             textures.len()
         );
+    }
+    Ok(())
+}
+
+/// Draw whatever pose the controller currently holds.
+///
+/// The renderable type is deliberately never named: it lives somewhere inside
+/// the runtime's module tree, and naming it wrongly is a compile error that says
+/// nothing about the drawing. Letting the iterator's type be inferred avoids
+/// the question entirely.
+fn draw_current(
+    controller: &SkeletonController,
+    textures: &[raster::Texture],
+    req: &RenderRequest,
+) -> Result<raster::Frame> {
+    let renderables = controller.renderables();
+    if renderables.is_empty() {
+        bail!("the skeleton posed to nothing; does the atlas match the skeleton?");
     }
 
     // The runtime reports this per attachment, so it is read rather than assumed.
@@ -304,7 +319,7 @@ pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
     };
     raster::render(
         &meshes,
-        &textures,
+        textures,
         req.width,
         req.height,
         req.background,
@@ -317,26 +332,6 @@ pub fn render_to_file(src: &SpineSource, req: &RenderRequest, out: &Path) -> Res
     let frame = render(src, req)?;
     frame.save(out)?;
     Ok(frame)
-}
-
-/// Turn Spine's posed renderables into the rasteriser's plain meshes.
-fn to_meshes(renderables: &[rusty_spine::SkeletonRenderable]) -> Vec<raster::Mesh> {
-    renderables
-        .iter()
-        .map(|r| raster::Mesh {
-            vertices: r.vertices.clone(),
-            uvs: r.uvs.clone(),
-            indices: r.indices.clone(),
-            color: [r.color.r, r.color.g, r.color.b, r.color.a],
-            blend: match r.blend_mode {
-                BlendMode::Normal => raster::Blend::Normal,
-                BlendMode::Additive => raster::Blend::Additive,
-                BlendMode::Multiply => raster::Blend::Multiply,
-                BlendMode::Screen => raster::Blend::Screen,
-            },
-            texture: 0,
-        })
-        .collect()
 }
 
 /// Draw a slice of the animation as an animated GIF; returns the frame count.
@@ -373,13 +368,7 @@ pub fn render_animation(
     advance(&mut controller, req.time.max(0.0));
 
     let textures = load_textures(&src.atlas)?;
-    if textures.len() != 1 {
-        bail!(
-            "this build draws single-page atlases, and {} has {} pages",
-            src.atlas.display(),
-            textures.len()
-        );
-    }
+    check_pages(&src.atlas, &textures)?;
 
     let step = 1.0f32 / fps as f32;
     let mut file =
@@ -391,25 +380,7 @@ pub fn render_animation(
         encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
         for _ in 0..frames {
             controller.update(step);
-            let renderables = controller.renderables();
-            if renderables.is_empty() {
-                bail!("the skeleton posed to nothing; does the atlas match?");
-            }
-            let premultiplied = renderables.iter().any(|r| r.premultiplied_alpha);
-            let meshes = to_meshes(&renderables);
-            let fit = raster::Fit {
-                margin: 0.06,
-                premultiplied_textures: premultiplied,
-                anchor: req.anchor,
-            };
-            let frame = raster::render(
-                &meshes,
-                &textures,
-                req.width,
-                req.height,
-                req.background,
-                &fit,
-            )?;
+            let frame = draw_current(&controller, &textures, req)?;
             let rgba = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels)
                 .context("the frame buffer does not match its dimensions")?;
             encoder.encode_frame(image::Frame::from_parts(rgba, 0, 0, delay))?;
