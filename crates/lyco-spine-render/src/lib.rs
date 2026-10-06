@@ -131,8 +131,50 @@ fn start_animation(
     Ok(())
 }
 
+/// The Spine version this build can actually read.
+///
+/// One version, not a range, because the binary layout changed between every
+/// minor release and each change is incompatible with the last. A single
+/// runtime cannot span them, and no Rust runtime exists for 2.x, 3.5-3.7 or
+/// 4.0 at all - only 3.8, 4.1, 4.2 and 4.3 have one.
+const SUPPORTED: (u32, u32) = (3, 8);
+
+/// Refuse a skeleton this build cannot read, and say why.
+///
+/// Without this the 3.8 runtime is simply handed a 4.2 file and fails with
+/// whatever the C layer says about a truncated read, which tells the caller
+/// nothing. The version is in the file's first bytes, so it costs nothing to
+/// read it first and name the real problem.
+fn check_version(src: &SpineSource) -> Result<()> {
+    let found = if src.binary {
+        let bytes = std::fs::read(&src.skeleton)
+            .with_context(|| format!("cannot read {}", src.skeleton.display()))?;
+        // A header that cannot be read is not this guard's business; the
+        // runtime will produce the real error a moment later.
+        lyco_spine::read_header(&bytes)
+            .ok()
+            .and_then(|header| header.major_minor())
+    } else {
+        None
+    };
+
+    match found {
+        Some(version) if version == SUPPORTED => Ok(()),
+        Some((major, minor)) => bail!(
+            "{} is Spine {major}.{minor}, and this build reads Spine {}.{} only.\n\
+             Spine changes its binary layout between releases, so one runtime cannot \
+             read them all; a build per version is the only way.",
+            src.skeleton.display(),
+            SUPPORTED.0,
+            SUPPORTED.1
+        ),
+        None => Ok(()),
+    }
+}
+
 /// Load the skeleton data, binary or JSON.
 fn load(src: &SpineSource) -> Result<Arc<SkeletonData>> {
+    check_version(src)?;
     let atlas = Arc::new(
         SpineAtlas::new_from_file(&src.atlas)
             .with_context(|| format!("cannot read {}", src.atlas.display()))?,
@@ -269,4 +311,62 @@ pub fn render_to_file(src: &SpineSource, req: &RenderRequest, out: &Path) -> Res
     let frame = render(src, req)?;
     frame.save(out)?;
     Ok(frame)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_string(out: &mut Vec<u8>, text: &str) {
+        // The length byte counts a terminator that is not written.
+        out.push((text.len() + 1) as u8);
+        out.extend_from_slice(text.as_bytes());
+    }
+
+    fn source(name: &str, bytes: &[u8]) -> SpineSource {
+        let dir = std::env::temp_dir().join("lyco-spine-render-tests");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let skeleton = dir.join(name);
+        std::fs::write(&skeleton, bytes).expect("write");
+        SpineSource {
+            atlas: dir.join("unused.atlas"),
+            skeleton,
+            binary: true,
+        }
+    }
+
+    #[test]
+    fn a_3_8_skeleton_passes_the_guard() {
+        let mut bytes = Vec::new();
+        push_string(&mut bytes, "somehashvalue");
+        push_string(&mut bytes, "3.8.99");
+        assert!(check_version(&source("v38.skel", &bytes)).is_ok());
+    }
+
+    /// The failure this guard exists for: without it, a 4.2 file reaches a 3.8
+    /// runtime and comes back as a truncated read that names nothing.
+    #[test]
+    fn a_4_2_skeleton_is_refused_by_name() {
+        let mut bytes = Vec::new();
+        push_string(&mut bytes, "4.2.00");
+        let err = check_version(&source("v42.skel", &bytes))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Spine 4.2"), "{err}");
+        assert!(err.contains("3.8"), "{err}");
+    }
+
+    #[test]
+    fn a_3_7_skeleton_is_refused_even_though_it_is_the_same_major() {
+        // 3.7 and 3.8 are not binary compatible, so "3.x" is too coarse to
+        // decide with; the minor version is what matters.
+        let mut bytes = Vec::new();
+        push_string(&mut bytes, "3.7.00");
+        assert!(check_version(&source("v37.skel", &bytes)).is_err());
+    }
+
+    #[test]
+    fn a_header_that_cannot_be_read_is_left_to_the_runtime() {
+        assert!(check_version(&source("empty.skel", &[])).is_ok());
+    }
 }
