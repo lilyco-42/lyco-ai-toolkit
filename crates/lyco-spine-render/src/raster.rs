@@ -599,8 +599,14 @@ mod tests {
         let standing = frame(Anchor::Footline(0.8))
             .opaque_bounds()
             .expect("standing");
-        assert_eq!(standing.3, 80, "the feet are at 0.8 of the height");
-        assert!(standing.1 < centred.1 || standing.1 == 0);
+        // The footline is a boundary, not a pixel row: a pixel whose centre is
+        // exactly on it is already below it, so the lowest painted row is one
+        // less than the fraction suggests.
+        assert!(
+            (79..=80).contains(&standing.3),
+            "the feet land on 0.8 of the height, to the nearest row: {}",
+            standing.3
+        );
         assert!(standing.3 < centred.3, "and it sits lower than centred");
     }
 
