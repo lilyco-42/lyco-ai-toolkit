@@ -475,6 +475,51 @@ jobs:
           fi
           grep -q 'not found' "$d/orphan.log"
 
+      # OBJ in, Bedrock geometry out. The fixture is deliberately the shape a
+      # real UnityPy export has: `f v/vt/vn` corners and no `vn` lines at all,
+      # which an earlier reader mistook for real normals.
+      - name: obj conversion smoke test
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          cat > "$d/model.obj" <<'EOF'
+          g block
+          v 0 0 0
+          v 4 0 0
+          v 4 4 0
+          v 0 4 0
+          v 0 0 4
+          v 4 0 4
+          v 4 4 4
+          v 0 4 4
+          vt 0 0
+          vt 1 0
+          vt 0 1
+          f 1/1/1 2/1/1 3/1/1
+          f 1/1/1 3/1/1 4/1/1
+          f 5/2/1 6/2/1 7/2/1
+          f 5/2/1 7/2/1 8/2/1
+          EOF
+
+          ./target/debug/lyco-cli bsm obj-info "$d/model.obj" > "$d/info.txt"
+          grep -q 'vertices:  8' "$d/info.txt"
+          grep -q 'triangles: 4' "$d/info.txt"
+          grep -q 'groups:    1' "$d/info.txt"
+          grep -q 'normals:   false' "$d/info.txt"
+          grep -q 'uvs:       true' "$d/info.txt"
+
+          ./target/debug/lyco-cli bsm from-obj "$d/model.obj" \
+            --out "$d/model.geo.json" --texture "$d/model.png"
+          ./target/debug/lyco-cli bsm validate "$d/model.geo.json"
+          test -s "$d/model.png"
+
+          # A file with no faces is not a mesh and must be refused.
+          printf 'v 0 0 0\nv 1 0 0\n' > "$d/empty.obj"
+          if ./target/debug/lyco-cli bsm obj-info "$d/empty.obj" 2>/dev/null; then
+            echo 'a file with no faces must be refused'
+            exit 1
+          fi
+
       - name: fmt
         run: cargo fmt --all -- --check
 

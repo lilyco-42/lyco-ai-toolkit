@@ -386,6 +386,28 @@ enum BsmCmd {
         #[arg(long, default_value = "geometry.lyco_converted")]
         identifier: String,
     },
+    /// Inspect a Wavefront OBJ without converting it (F3 input side)
+    ObjInfo {
+        /// OBJ file to inspect
+        path: String,
+    },
+    /// Convert a Wavefront OBJ into Bedrock geometry, with a generated texture (F3)
+    FromObj {
+        /// OBJ file to convert
+        path: String,
+        /// Output .geo.json path
+        #[arg(long, short, default_value = "out/model.geo.json")]
+        out: String,
+        /// Output texture PNG path
+        #[arg(long, default_value = "out/model.png")]
+        texture: String,
+        /// Voxels along the model's longest axis
+        #[arg(long, default_value_t = 24)]
+        resolution: u32,
+        /// Geometry identifier written into the file
+        #[arg(long, default_value = "geometry.lyco_converted")]
+        identifier: String,
+    },
 }
 
 /// Restore the default SIGPIPE handler on Unix.
@@ -909,6 +931,58 @@ fn run_bsm(cmd: BsmCmd) -> Result<()> {
             Ok(())
         }
 
+        BsmCmd::ObjInfo { path } => {
+            let text =
+                std::fs::read_to_string(&path).with_context(|| format!("cannot read {path}"))?;
+            let mesh = lyco_bsm::parse_obj(&text)?;
+            let size = [
+                mesh.max[0] - mesh.min[0],
+                mesh.max[1] - mesh.min[1],
+                mesh.max[2] - mesh.min[2],
+            ];
+            println!("vertices:  {}", mesh.positions.len());
+            println!("triangles: {}", mesh.triangle_count());
+            println!("groups:    {}", mesh.groups.len());
+            for group in &mesh.groups {
+                println!("  {} ({} triangles)", group.name, group.count);
+            }
+            println!("bounds:    {:?} to {:?}", mesh.min, mesh.max);
+            println!("size:      {size:?}");
+            println!("uvs:       {}", mesh.uvs.is_some());
+            println!("normals:   {}", mesh.normals.is_some());
+            println!("colours:   {}", mesh.colors.is_some());
+            Ok(())
+        }
+        BsmCmd::FromObj {
+            path,
+            out,
+            texture,
+            resolution,
+            identifier,
+        } => {
+            let text =
+                std::fs::read_to_string(&path).with_context(|| format!("cannot read {path}"))?;
+            let mesh = lyco_bsm::parse_obj(&text)?;
+            if mesh.is_empty() {
+                bail!("{path} has no triangles");
+            }
+            let cfg = ConvertConfig {
+                resolution: resolution.clamp(1, 64),
+                identifier,
+                ..Default::default()
+            };
+            let conversion = lyco_bsm::convert_obj(&mesh, &cfg)?;
+            std::fs::write(&out, conversion.geometry.to_json()?)?;
+            println!(
+                "wrote {out}; {} triangles -> {} voxels -> {} boxes",
+                conversion.triangles, conversion.voxels, conversion.boxes
+            );
+            if !texture.is_empty() {
+                conversion.save_texture(&texture)?;
+                println!("wrote {texture}");
+            }
+            Ok(())
+        }
         BsmCmd::GlbInfo { path } => {
             let bytes = std::fs::read(&path)?;
             let glb = Glb::parse(&bytes).with_context(|| format!("cannot read {path}"))?;
