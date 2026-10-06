@@ -175,6 +175,14 @@ pub struct Fit {
     pub premultiplied_textures: bool,
     /// Where the model sits vertically.
     pub anchor: Anchor,
+    /// The box to fit, when it is already known.
+    ///
+    /// A single frame can measure itself. **A sequence must not.** If every
+    /// frame centres its own pose, the centring follows whichever limb happened
+    /// to move: the character sways left and right and bobs up and down while
+    /// the animation plays, even though the animation itself is fine. Measure
+    /// once over every frame, then pass the same box to all of them.
+    pub bounds: Option<Bounds>,
 }
 
 impl Default for Fit {
@@ -183,8 +191,54 @@ impl Default for Fit {
             margin: 0.06,
             premultiplied_textures: false,
             anchor: Anchor::Centre,
+            bounds: None,
         }
     }
+}
+
+/// The rectangle a set of meshes occupies, in skeleton space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bounds {
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+}
+
+impl Bounds {
+    /// The smallest box containing both.
+    pub fn union(self, other: Bounds) -> Bounds {
+        Bounds {
+            min: [self.min[0].min(other.min[0]), self.min[1].min(other.min[1])],
+            max: [self.max[0].max(other.max[0]), self.max[1].max(other.max[1])],
+        }
+    }
+
+    pub fn width(&self) -> f32 {
+        self.max[0] - self.min[0]
+    }
+
+    pub fn height(&self) -> f32 {
+        self.max[1] - self.min[1]
+    }
+}
+
+/// The box a frame's meshes occupy, or `None` when there are none.
+pub fn measure(meshes: &[Mesh]) -> Option<Bounds> {
+    let mut bounds: Option<Bounds> = None;
+    for mesh in meshes {
+        for vertex in &mesh.vertices {
+            bounds = Some(match bounds {
+                None => Bounds {
+                    min: *vertex,
+                    max: *vertex,
+                },
+                Some(b) => Bounds {
+                    min: [b.min[0].min(vertex[0]), b.min[1].min(vertex[1])],
+                    max: [b.max[0].max(vertex[0]), b.max[1].max(vertex[1])],
+                },
+            });
+        }
+    }
+    bounds
 }
 
 /// How a model is placed on the vertical axis.
@@ -380,20 +434,14 @@ pub fn render(
 ) -> Result<Frame> {
     let mut frame = Frame::new(width, height, background)?;
 
-    let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
-    let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
-    for mesh in meshes {
-        for vertex in &mesh.vertices {
-            min_x = min_x.min(vertex[0]);
-            min_y = min_y.min(vertex[1]);
-            max_x = max_x.max(vertex[0]);
-            max_y = max_y.max(vertex[1]);
-        }
-    }
-    if min_x > max_x || min_y > max_y {
+    // A sequence hands in the box it measured over all its frames; a lone frame
+    // measures itself. Measuring per frame is what makes a character sway.
+    let Some(bounds) = fit.bounds.or_else(|| measure(meshes)) else {
         // Nothing was submitted, so the background is the correct answer.
         return Ok(frame);
-    }
+    };
+    let (min_x, min_y) = (bounds.min[0], bounds.min[1]);
+    let (max_x, max_y) = (bounds.max[0], bounds.max[1]);
 
     let span_x = (max_x - min_x).max(1e-6);
     let span_y = (max_y - min_y).max(1e-6);

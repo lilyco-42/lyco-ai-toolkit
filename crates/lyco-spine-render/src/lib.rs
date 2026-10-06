@@ -260,7 +260,7 @@ pub fn render(src: &SpineSource, req: &RenderRequest) -> Result<raster::Frame> {
     advance(&mut controller, req.time.max(0.0));
     let textures = load_textures(&src.atlas)?;
     check_pages(&src.atlas, &textures)?;
-    draw_current(&mut controller, &textures, req)
+    draw_current(&mut controller, &textures, req, None)
 }
 
 /// Refuse a multi-page atlas, naming why.
@@ -277,6 +277,32 @@ fn check_pages(atlas: &Path, textures: &[raster::Texture]) -> Result<()> {
     Ok(())
 }
 
+/// The box the controller's current pose occupies.
+///
+/// The renderable type is never named: it lives somewhere inside the runtime's
+/// module tree, and guessing its path is a compile error that says nothing about
+/// the geometry. Only the vertex positions are wanted here, so only those are
+/// taken.
+fn measure_current(controller: &mut SkeletonController) -> Option<raster::Bounds> {
+    let renderables = controller.renderables();
+    let mut bounds: Option<raster::Bounds> = None;
+    for renderable in &renderables {
+        for vertex in &renderable.vertices {
+            bounds = Some(match bounds {
+                None => raster::Bounds {
+                    min: *vertex,
+                    max: *vertex,
+                },
+                Some(b) => raster::Bounds {
+                    min: [b.min[0].min(vertex[0]), b.min[1].min(vertex[1])],
+                    max: [b.max[0].max(vertex[0]), b.max[1].max(vertex[1])],
+                },
+            });
+        }
+    }
+    bounds
+}
+
 /// Draw whatever pose the controller currently holds.
 ///
 /// The renderable type is deliberately never named: it lives somewhere inside
@@ -289,6 +315,9 @@ fn draw_current(
     controller: &mut SkeletonController,
     textures: &[raster::Texture],
     req: &RenderRequest,
+    // The box every frame of this sequence shares, so the character does not
+    // sway when a limb moves.
+    bounds: Option<raster::Bounds>,
 ) -> Result<raster::Frame> {
     let renderables = controller.renderables();
     if renderables.is_empty() {
@@ -315,9 +344,9 @@ fn draw_current(
         .collect();
 
     let fit = raster::Fit {
-        margin: 0.06,
         premultiplied_textures: premultiplied,
-        anchor: req.anchor,
+        bounds,
+        ..raster::Fit::default()
     };
     raster::render(
         &meshes,
@@ -361,18 +390,42 @@ pub fn render_animation(
     }
 
     let data = load(src)?;
+    let step = 1.0f32 / fps as f32;
+
+    // Pass one: how much room does *any* frame of this animation need?
+    //
+    // This is the whole reason the animation path is two passes. Fitting each
+    // frame to its own pose lets the centring follow whichever limb moved, and
+    // the character sways left and right and bobs up and down while the
+    // animation underneath is perfectly correct.
+    let bounds = {
+        let state = Arc::new(AnimationStateData::new(data.clone()));
+        let mut probe = SkeletonController::new(data.clone(), state);
+        if let Some(name) = &req.animation {
+            start_animation(&mut probe, &data, name)?;
+        }
+        advance(&mut probe, req.time.max(0.0));
+        let mut union: Option<raster::Bounds> = None;
+        for _ in 0..frames {
+            probe.update(step);
+            if let Some(b) = measure_current(&mut probe) {
+                union = Some(union.map_or(b, |u: raster::Bounds| u.union(b)));
+            }
+        }
+        union
+    };
+
+    // Pass two: draw every frame into that one box.
     let state = Arc::new(AnimationStateData::new(data.clone()));
     let mut controller = SkeletonController::new(data.clone(), state);
     if let Some(name) = &req.animation {
         start_animation(&mut controller, &data, name)?;
     }
-    // Reach the requested start time first, so frame 0 is the pose asked for.
     advance(&mut controller, req.time.max(0.0));
 
     let textures = load_textures(&src.atlas)?;
     check_pages(&src.atlas, &textures)?;
 
-    let step = 1.0f32 / fps as f32;
     let mut file =
         std::fs::File::create(out).with_context(|| format!("cannot create {}", out.display()))?;
     let delay = image::Delay::from_numer_denom_ms(1000, fps);
@@ -382,7 +435,7 @@ pub fn render_animation(
         encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
         for _ in 0..frames {
             controller.update(step);
-            let frame = draw_current(&mut controller, &textures, req)?;
+            let frame = draw_current(&mut controller, &textures, req, bounds)?;
             let rgba = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels)
                 .context("the frame buffer does not match its dimensions")?;
             encoder.encode_frame(image::Frame::from_parts(rgba, 0, 0, delay))?;
