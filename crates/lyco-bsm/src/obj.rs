@@ -209,10 +209,14 @@ pub fn parse_obj(text: &str) -> Result<ObjMesh> {
                         corner.1.map(|t| t + 1).unwrap_or(0),
                         corner.2.map(|n| n + 1).unwrap_or(0),
                     );
-                    if !corner.1.is_some() {
+                    // A corner that names no uv, or names one the file never
+                    // defined, means the attribute cannot be filled honestly.
+                    // Real exports do the second constantly: UnityPy's OBJ
+                    // writer emits `f v/vt/vn` with no `vn` lines at all.
+                    if corner.1.is_none_or(|t| t >= raw_uvs.len()) {
                         every_corner_has_uv = false;
                     }
-                    if !corner.2.is_some() {
+                    if corner.2.is_none_or(|n| n >= raw_normals.len()) {
                         every_corner_has_normal = false;
                     }
                     if let Some(existing) = seen.get(&key) {
@@ -369,6 +373,29 @@ mod tests {
     fn comments_and_unknown_statements_are_ignored() {
         let text = "# c\nmtllib thing.mtl\nusemtl mat\ns 1\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
         assert_eq!(parse_obj(text).expect("parse").triangle_count(), 1);
+    }
+
+    /// The shape a real UnityPy export has: `f v/vt/vn` corners with no `vn`
+    /// lines anywhere. An earlier version trusted the index and reported
+    /// normals that were all the fallback, which is worse than reporting none.
+    #[test]
+    fn a_dangling_normal_index_drops_the_attribute_instead_of_faking_it() {
+        let text = "g m\nv 0 0 0\nv 1 0 0\nv 0 1 0\n\
+vt 0 0\nvt 1 0\nvt 0 1\nf 3/3/3 2/2/2 1/1/1\n";
+        let mesh = parse_obj(text).expect("parse");
+        assert!(mesh.normals.is_none(), "the file defines no normals");
+        assert!(mesh.uvs.is_some(), "but it does define uvs");
+        assert_eq!(mesh.indices.len(), 3);
+        assert_eq!(mesh.groups.len(), 1);
+        assert_eq!(mesh.groups[0].name, "m");
+    }
+
+    #[test]
+    fn a_dangling_uv_index_drops_that_attribute_too() {
+        let text = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1/9/1 2/9/1 3/9/1\n";
+        let mesh = parse_obj(text).expect("parse");
+        assert!(mesh.uvs.is_none(), "uv 9 was never defined");
+        assert!(mesh.normals.is_some());
     }
 
     #[test]
