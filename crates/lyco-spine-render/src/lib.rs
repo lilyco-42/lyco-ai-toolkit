@@ -259,6 +259,36 @@ pub fn describe(src: &SpineSource) -> Result<Description> {
     })
 }
 
+/// What a skeleton's rig is: its bones and its animation clips.
+///
+/// A rig is the thing any learning problem would have to share between models,
+/// which is exactly why it is worth reporting separately: two skeletons can
+/// both be "an Arknights operator" and still name their bones differently, and
+/// no amount of training data fixes that.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rig {
+    /// Bone names, in the order the skeleton declares them.
+    pub bones: Vec<String>,
+    /// Animation clips and their duration in seconds.
+    pub animations: Vec<(String, f32)>,
+}
+
+/// Report the bones and animation clips a skeleton declares.
+///
+/// Unlike [`describe`] this does not pose the skeleton, so it says nothing
+/// about meshes; it is the cheap half, and the half a caller comparing two
+/// rigs actually wants.
+pub fn rig(src: &SpineSource) -> Result<Rig> {
+    let data = load(src)?;
+    Ok(Rig {
+        bones: data.bones().map(|bone| bone.name().to_string()).collect(),
+        animations: data
+            .animations()
+            .map(|clip| (clip.name().to_string(), clip.duration()))
+            .collect(),
+    })
+}
+
 /// Load the page images an atlas refers to.
 ///
 /// The atlas is read with `lyco-spine`'s own parser rather than the runtime's,

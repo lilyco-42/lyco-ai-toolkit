@@ -10,13 +10,14 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
 use lyco_spine_render::{
-    describe, render_animation, render_to_file, Anchor, RenderRequest, SpineSource,
+    describe, render_animation, render_to_file, rig, Anchor, RenderRequest, SpineSource,
 };
 
 fn usage() -> String {
     [
         "usage:",
         "  lyco-spine-render describe <atlas> <skeleton>",
+        "  lyco-spine-render rig      <atlas> <skeleton>",
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
         "  lyco-spine-render animate  <atlas> <skeleton> <out.gif> [options]",
         "",
@@ -83,6 +84,27 @@ fn main() -> Result<()> {
             }
             if info.animations.len() > 15 {
                 println!("  ... and {} more", info.animations.len() - 15);
+            }
+            Ok(())
+        }
+        Some("rig") => {
+            let (atlas, skeleton) = match (args.get(1), args.get(2)) {
+                (Some(a), Some(s)) => (a, s),
+                _ => bail!("{}", usage()),
+            };
+            let src = SpineSource::new(atlas, skeleton);
+            let info = rig(&src)?;
+            // Tab-separated, so a caller comparing rigs does not have to parse
+            // prose: one bone per line, then one "name <tab> seconds" per clip.
+            println!("bones:\t{}", info.bones.len());
+            println!("animations:\t{}", info.animations.len());
+            println!("--bones--");
+            for bone in &info.bones {
+                println!("{bone}");
+            }
+            println!("--animations--");
+            for (name, seconds) in &info.animations {
+                println!("{name}\t{seconds}");
             }
             Ok(())
         }

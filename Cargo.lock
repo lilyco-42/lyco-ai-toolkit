@@ -542,12 +542,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazy_static"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
-
-[[package]]
 name = "lebe"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -600,14 +594,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyco-audio"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "lyco-bsm"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image",
+ "lyco-mc-skin",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -616,9 +617,14 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image",
+ "lyco-audio",
+ "lyco-bsm",
+ "lyco-image",
+ "lyco-lyrics",
+ "lyco-mc-skin",
+ "lyco-spine",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -627,20 +633,34 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "libc",
+ "lyco-audio",
+ "lyco-bsm",
  "lyco-bundle",
- "tracing",
- "tracing-subscriber",
+ "lyco-image",
+ "lyco-kaggle",
+ "lyco-lyrics",
+ "lyco-mc-skin",
+ "lyco-mcp",
+ "lyco-spine",
+ "serde_json",
 ]
 
 [[package]]
-name = "lyco-codegen-mcp"
+name = "lyco-image"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "image",
+]
+
+[[package]]
+name = "lyco-kaggle"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -648,10 +668,7 @@ name = "lyco-lyrics"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
- "image",
  "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -663,6 +680,38 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "lyco-mcp"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "lyco-audio",
+ "lyco-bsm",
+ "lyco-bundle",
+ "lyco-image",
+ "lyco-lyrics",
+ "lyco-mc-skin",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lyco-spine"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
+name = "lyco-spine-render"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "image",
+ "lyco-spine",
+ "rusty_spine",
 ]
 
 [[package]]
@@ -700,6 +749,12 @@ dependencies = [
  "adler2",
  "simd-adler32",
 ]
+
+[[package]]
+name = "mint"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "mio"
@@ -751,15 +806,6 @@ name = "noop_proc_macro"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
-
-[[package]]
-name = "nu-ansi-term"
-version = "0.50.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
-dependencies = [
- "windows-sys",
-]
 
 [[package]]
 name = "num-bigint"
@@ -1125,6 +1171,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "rusty_spine"
+version = "0.3.1"
+source = "git+https://github.com/jabuwu/rusty_spine3.8?rev=4ff8b7280aeb7367f235752c30dc85184c01452a#4ff8b7280aeb7367f235752c30dc85184c01452a"
+dependencies = [
+ "mint",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1171,15 +1225,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "sharded-slab"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
-dependencies = [
- "lazy_static",
 ]
 
 [[package]]
@@ -1284,15 +1329,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thread_local"
-version = "1.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "tiff"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1335,63 +1371,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing"
-version = "0.1.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
-dependencies = [
- "pin-project-lite",
- "tracing-attributes",
- "tracing-core",
-]
-
-[[package]]
-name = "tracing-attributes"
-version = "0.1.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "tracing-core"
-version = "0.1.36"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
-dependencies = [
- "once_cell",
- "valuable",
-]
-
-[[package]]
-name = "tracing-log"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
-dependencies = [
- "log",
- "once_cell",
- "tracing-core",
-]
-
-[[package]]
-name = "tracing-subscriber"
-version = "0.3.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
-dependencies = [
- "nu-ansi-term",
- "sharded-slab",
- "smallvec",
- "thread_local",
- "tracing-core",
- "tracing-log",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1413,12 +1392,6 @@ dependencies = [
  "num-traits",
  "wasm-bindgen",
 ]
-
-[[package]]
-name = "valuable"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "version_check"
