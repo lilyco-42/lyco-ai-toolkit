@@ -18,6 +18,16 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
+      # The Spine renderer's runtime is a git dependency, so a cold run clones
+      # it, and that clone is most of the wait.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: spine-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            spine-git-${{ runner.os }}-
       # A new crate has to be declared in the Cargo.toml of whoever uses it.
       # That has been forgotten twice, once per crate, and the compiler only
       # says so after a full round trip; this says it in a second.
@@ -478,6 +488,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      # The Spine renderer's runtime is a git dependency, so a cold run clones
+      # it, and that clone is most of the wait.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: spine-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            spine-git-${{ runner.os }}-
       - name: build the CLI
         run: cargo build --release -p lyco-cli
 

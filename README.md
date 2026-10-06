@@ -107,8 +107,24 @@ lyco-cli spine version model.skel      # 读出需要的 Spine 版本
 - 所以默认 CI **只验证它能编译**，不产出 artifact；`windows-binary` 只发纯 MIT 的
   `lyco-cli.exe`
 
-要拿到这个二进制，用仓库里的 **`build from source`** workflow（`workflow_dispatch`）：
+要拿到这个二进制，用仓库里的 **build from source** workflow（`workflow_dispatch`）：
 你在自己的 fork 里触发，在你自己的授权下构建，产物只进你这次 run。
+
+它的输入：
+
+- `target` —— 默认 `lyco-spine-render`，也可选 `lyco-cli` 或 `both`
+- `runner` —— 默认 `windows-latest`，或 `ubuntu-latest`
+- **`spine_lib` —— 要链接的 Spine 运行时 git 地址**（默认 `rusty_spine3.8`）
+- **`spine_rev` —— 该运行时的 revision**，commit / tag / branch 都行
+
+`spine_lib` 和 `spine_rev` **是真的生效的**：workflow 会改写
+`crates/lyco-spine-render/Cargo.toml` 里那一行再开始构建，所以你可以拿它试别的运行时。
+运行时地址、revision、许可链接会在构建开头打印，并且**参与缓存 key**，
+换 revision 不会误用旧产物。
+
+**缓存**：默认 CI 和这个 workflow 都缓存两层 ——
+`~/.cargo/git/db` 与 `~/.cargo/git/checkouts`（Spine 运行时那个 git 依赖的 clone，
+冷启动最慢的一步），以及 `rust-cache` 管的 `target/` 增量编译。
 
 **注意：`pma` 是 Spine 4.x 的键。** 往 3.8 的 atlas 里写 `pma: true` 会让 3.8 运行时
 **完全读不了那个文件** —— 实测确认，已在代码和 CLI 帮助里标注。

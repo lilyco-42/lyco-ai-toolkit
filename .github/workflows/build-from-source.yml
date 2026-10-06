@@ -31,6 +31,21 @@ on:
           - windows-latest
           - ubuntu-latest
         default: windows-latest
+      spine_lib:
+        description: Git URL of the Spine runtime to link against
+        type: string
+        default: https://github.com/jabuwu/rusty_spine3.8
+      spine_rev:
+        description: Revision of that runtime - a commit, tag or branch
+        type: string
+        default: 4ff8b7280aeb7367f235752c30dc85184c01452a
+
+env:
+  # The Spine runtime this build links, named once so the notice, the cache key
+  # and the dependency the crate actually resolves cannot drift apart.
+  SPINE_LIB: ${{ inputs.spine_lib }}
+  SPINE_REV: ${{ inputs.spine_rev }}
+  SPINE_LICENCE: https://esotericsoftware.com/spine-runtimes-license
 
 jobs:
   build:
@@ -38,26 +53,67 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
 
       # Read this before using the result. It is the whole reason this workflow
-      # exists separately from the ordinary build.
-      - name: licence notice
+      # exists separately from the ordinary build, so it goes first.
+      - name: what this build links, and under what licence
         shell: bash
         run: |
-          cat <<'EOF'
+          cat <<EOF
           ============================================================
-          lyco-spine-render links the official Spine runtime.
-          That runtime is under the Spine Runtimes License Agreement:
-          https://esotericsoftware.com/spine-runtimes-license
 
-          The Rust source in this repository is MIT. A BINARY BUILT FROM
-          lyco-spine-render IS NOT, and using or shipping one requires a
-          valid Spine licence held by you.
+          Spine runtime : $SPINE_LIB
+          revision      : $SPINE_REV
+          licence       : $SPINE_LICENCE
+
+          The Rust source in this repository is MIT. THAT RUNTIME IS NOT.
+          A binary built from lyco-spine-render may only be used or shipped
+          by someone holding a valid Spine licence of their own.
 
           lyco-cli has no such dependency and is MIT end to end.
           ============================================================
           EOF
+
+      # Point the crate at whichever runtime was asked for. Without this the
+      # two inputs above would be decoration.
+      - name: link the requested runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SPINE_LIB" "$SPINE_REV" <<'PY'
+          import pathlib, re, sys
+
+          url, rev = sys.argv[1], sys.argv[2]
+          path = pathlib.Path("crates/lyco-spine-render/Cargo.toml")
+          replacement = 'rusty_spine = { git = "%s", rev = "%s" }' % (url, rev)
+          updated, count = re.subn(
+              r'^rusty_spine\s*=\s*\{.*\}$', replacement, path.read_text(), flags=re.M
+          )
+          if count != 1:
+              sys.exit(f"expected exactly one rusty_spine line, found {count}")
+          path.write_text(updated)
+          print("now linking:", replacement)
+          PY
+
+      # A cold rust-cache run still clones the git dependency, and that clone is
+      # most of the wait. Caching the cargo git checkout is what makes a repeat
+      # build quick.
+      - name: cache the runtime checkout
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git/db
+            ~/.cargo/git/checkouts
+          key: spine-git-${{ runner.os }}-${{ env.SPINE_REV }}
+          restore-keys: |
+            spine-git-${{ runner.os }}-
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Fold the runtime revision in, so a different one never reuses this
+          # build's artifacts.
+          key: spine-${{ env.SPINE_REV }}
+          cache-on-failure: true
 
       - name: build
         shell: bash
