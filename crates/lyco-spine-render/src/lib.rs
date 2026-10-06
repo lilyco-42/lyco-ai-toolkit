@@ -622,6 +622,209 @@ pub fn parts(src: &SpineSource, req: &RenderRequest) -> Result<Parts> {
     })
 }
 
+/// One frame of a labelled sequence: the picture and its per-pixel part map.
+pub struct SequenceFrame {
+    /// The character as drawn, every part visible.
+    pub rgb: raster::Frame,
+    /// `0` where nothing was drawn or the pixel belongs to no known part
+    /// (a prop, say), otherwise the 1-based index into [`PARTS`].
+    pub labels: raster::Frame,
+    /// Pixels per part, in [`PARTS`] order.
+    pub counts: Vec<u32>,
+    /// Labelled body pixels divided by every drawn pixel. Low here means most
+    /// of the silhouette is a prop or an unrecognised shard, and the frame is
+    /// a poor training example worth dropping.
+    pub coverage: f32,
+}
+
+/// Draw a short clip and label every pixel of every frame with its body part.
+///
+/// Two passes, exactly as [`render_animation`] uses, because a clip needs one
+/// box that fits every frame or the character sways as limbs swing. The box can
+/// be measured over the whole silhouette, or over the body parts alone so a
+/// long weapon does not shrink the character into the corner of the frame.
+///
+/// Each frame yields its own RGB and 17-class mask; both share the box, so the
+/// labels line up with the pixels. The slot-to-part table is decided once: a
+/// bone's meaning does not change because the pose did.
+pub fn parts_sequence(
+    src: &SpineSource,
+    req: &RenderRequest,
+    frames: u32,
+    fps: u32,
+    body_only_bounds: bool,
+) -> Result<Vec<SequenceFrame>> {
+    if frames == 0 {
+        bail!("a sequence needs at least one frame");
+    }
+    if fps == 0 {
+        bail!("a sequence needs a frame rate above zero");
+    }
+
+    let data = load(src)?;
+    let textures = load_textures(&src.atlas)?;
+    let step = 1.0f32 / fps as f32;
+
+    // Decide which slots are body parts once. This is the only place the rig's
+    // naming is read; the pose never changes it.
+    let setup_state = Arc::new(AnimationStateData::new(data.clone()));
+    let mut setup = SkeletonController::new(data.clone(), setup_state);
+    if let Some(name) = &req.animation {
+        start_animation(&mut setup, &data, name)?;
+    }
+    advance(&mut setup, req.time.max(0.0));
+    let parents = bone_parents(&data);
+    let part_by_slot: Vec<Option<usize>> = setup
+        .skeleton
+        .slots()
+        .map(|slot| part_of_bone(slot.data().bone_data().name(), &parents))
+        .collect();
+    if !part_by_slot.iter().any(Option::is_some) {
+        bail!(
+            "no slot in this skeleton hangs on any of the {} body parts; \
+             it is probably not human-shaped",
+            PARTS.len()
+        );
+    }
+
+    // Pass one: one box for the whole clip. Optionally ignore props so a weapon
+    // cannot dictate the framing.
+    let bounds = {
+        let state = Arc::new(AnimationStateData::new(data.clone()));
+        let mut probe = SkeletonController::new(data.clone(), state);
+        if let Some(name) = &req.animation {
+            start_animation(&mut probe, &data, name)?;
+        }
+        advance(&mut probe, req.time.max(0.0));
+        if body_only_bounds {
+            for (mut slot, part) in probe.skeleton.slots_mut().zip(part_by_slot.iter()) {
+                if part.is_none() {
+                    slot.color_mut().a = 0.0;
+                }
+            }
+        }
+        let mut union: Option<raster::Bounds> = None;
+        for _ in 0..frames {
+            probe.update(step);
+            let measured = if body_only_bounds {
+                measure_visible(&mut probe)
+            } else {
+                measure_current(&mut probe)
+            };
+            if let Some(b) = measured {
+                union = Some(union.map_or(b, |u: raster::Bounds| u.union(b)));
+            }
+        }
+        for mut slot in probe.skeleton.slots_mut() {
+            slot.color_mut().a = 1.0;
+        }
+        union
+    };
+    let bounds = bounds.context("the skeleton posed to nothing; does the atlas match it?")?;
+
+    // Pass two: draw every frame into that one box.
+    let state = Arc::new(AnimationStateData::new(data.clone()));
+    let mut controller = SkeletonController::new(data.clone(), state);
+    if let Some(name) = &req.animation {
+        start_animation(&mut controller, &data, name)?;
+    }
+    advance(&mut controller, req.time.max(0.0));
+
+    let mut out = Vec::with_capacity(frames as usize);
+    for _ in 0..frames {
+        controller.update(step);
+        let rgb = draw_current(&mut controller, &textures, req, Some(bounds))?;
+        let mut labels = raster::Frame::new(req.width, req.height, [0, 0, 0, 0])?;
+        let mut counts = vec![0u32; PARTS.len()];
+
+        for (index, _) in PARTS.iter().enumerate() {
+            for (mut slot, part) in controller.skeleton.slots_mut().zip(part_by_slot.iter()) {
+                slot.color_mut().a = f32::from(*part == Some(index));
+            }
+            let mask = draw_current(&mut controller, &textures, req, Some(bounds))?;
+            for (pixel, value) in labels.pixels.as_chunks_mut::<4>().0.iter_mut().zip(
+                mask.pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|pixel| u8::from(pixel[3] > 0)),
+            ) {
+                if value != 0 {
+                    let id = (index + 1) as u8;
+                    pixel[0] = id;
+                    pixel[1] = id;
+                    pixel[2] = id;
+                    pixel[3] = id;
+                    counts[index] += 1;
+                }
+            }
+        }
+        for mut slot in controller.skeleton.slots_mut() {
+            slot.color_mut().a = 1.0;
+        }
+
+        // Coverage: how much of the drawn silhouette is a known body part.
+        // Counted over pixels, not over parts, because a seam where the arm and
+        // forearm both cover a pixel would otherwise be tallied twice.
+        let drawn: u32 = rgb
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|pixel| u32::from(pixel[3] > 0))
+            .sum();
+        let labelled: u32 = labels
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|pixel| u32::from(pixel[3] > 0))
+            .sum();
+        let coverage = if drawn > 0 {
+            labelled as f32 / drawn as f32
+        } else {
+            0.0
+        };
+
+        out.push(SequenceFrame {
+            rgb,
+            labels,
+            counts,
+            coverage,
+        });
+    }
+
+    Ok(out)
+}
+
+/// The box the controller's current pose occupies, counting only renderables
+/// that are actually drawn (slot alpha above zero).
+///
+/// Used to frame a clip on the body alone, so a held weapon cannot push the
+/// character to the edge of the frame.
+fn measure_visible(controller: &mut SkeletonController) -> Option<raster::Bounds> {
+    let renderables = controller.renderables();
+    let mut bounds: Option<raster::Bounds> = None;
+    for renderable in &renderables {
+        if renderable.color.a <= 0.0 {
+            continue;
+        }
+        for vertex in &renderable.vertices {
+            bounds = Some(match bounds {
+                None => raster::Bounds {
+                    min: *vertex,
+                    max: *vertex,
+                },
+                Some(b) => raster::Bounds {
+                    min: [b.min[0].min(vertex[0]), b.min[1].min(vertex[1])],
+                    max: [b.max[0].max(vertex[0]), b.max[1].max(vertex[1])],
+                },
+            });
+        }
+    }
+    bounds
+}
+
 /// Load the page images an atlas refers to.
 ///
 /// The atlas is read with `lyco-spine`'s own parser rather than the runtime's,

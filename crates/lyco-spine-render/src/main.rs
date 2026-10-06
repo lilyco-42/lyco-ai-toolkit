@@ -10,8 +10,8 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
 use lyco_spine_render::{
-    describe, parts, render_animation, render_to_file, rig, Anchor, RenderRequest, SpineSource,
-    PARTS,
+    describe, parts, parts_sequence, render_animation, render_to_file, rig, Anchor, RenderRequest,
+    SpineSource, PARTS,
 };
 
 fn usage() -> String {
@@ -20,6 +20,7 @@ fn usage() -> String {
         "  lyco-spine-render describe <atlas> <skeleton>",
         "  lyco-spine-render rig      <atlas> <skeleton>",
         "  lyco-spine-render parts    <atlas> <skeleton> <out-prefix>",
+        "  lyco-spine-render parts_seq <atlas> <skeleton> <out-dir> [options]",
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
         "  lyco-spine-render animate  <atlas> <skeleton> <out.gif> [options]",
         "",
@@ -148,6 +149,82 @@ fn main() -> Result<()> {
             for (name, count) in PARTS.iter().zip(&labelled.counts) {
                 println!("  {name}\t{count}");
             }
+            Ok(())
+        }
+        Some("parts_seq") => {
+            let (atlas, skeleton, out) = match (args.get(1), args.get(2), args.get(3)) {
+                (Some(a), Some(s), Some(o)) => (a, s, o),
+                _ => bail!("{}", usage()),
+            };
+            let (width, height) = match flag(&args, "--size") {
+                Some(text) => parse_size(&text)?,
+                None => (256, 256),
+            };
+            let frames = match flag(&args, "--frames") {
+                Some(text) => text.parse().context("bad --frames")?,
+                None => 24,
+            };
+            let fps = match flag(&args, "--fps") {
+                Some(text) => text.parse().context("bad --fps")?,
+                None => 12,
+            };
+            let body_only = args.iter().any(|a| a == "--body-bounds");
+            let req = RenderRequest {
+                width,
+                height,
+                animation: flag(&args, "--animation"),
+                time: match flag(&args, "--time") {
+                    Some(text) => text.parse().context("bad --time")?,
+                    None => 0.0,
+                },
+                ..RenderRequest::default()
+            };
+
+            let src = SpineSource::new(atlas, skeleton);
+            let seq = parts_sequence(&src, &req, frames, fps, body_only)?;
+
+            let dir = PathBuf::from(out);
+            std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+            let keep = match flag(&args, "--keep") {
+                Some(text) => text.parse::<f32>().context("bad --keep")?,
+                None => 0.0,
+            };
+
+            let mut manifest = String::from("frame\tcoverage");
+            for name in PARTS.iter() {
+                manifest.push('\t');
+                manifest.push_str(name);
+            }
+            manifest.push('\n');
+
+            let mut kept = 0;
+            for (i, frame) in seq.iter().enumerate() {
+                let tag = format!("frame_{:05}", i);
+                let rgb_path = dir.join(format!("{tag}_rgb.png", ));
+                let lab_path = dir.join(format!("{tag}_labels.png"));
+                frame.rgb.save(&rgb_path)?;
+                frame.labels.save(&lab_path)?;
+                let drop = keep > 0.0 && frame.coverage < keep;
+                if drop {
+                    std::fs::remove_file(&rgb_path).ok();
+                    std::fs::remove_file(&lab_path).ok();
+                } else {
+                    kept += 1;
+                }
+                manifest.push_str(&format!("{}\t{:.4}", if drop { "DROP" } else { &tag }, frame.coverage));
+                for count in &frame.counts {
+                    manifest.push('\t');
+                    manifest.push_str(&count.to_string());
+                }
+                manifest.push('\n');
+            }
+            let manifest_path = dir.join("meta.tsv");
+            std::fs::write(&manifest_path, manifest)?;
+
+            let mean: f32 = seq.iter().map(|f| f.coverage).sum::<f32>() / seq.len() as f32;
+            println!("wrote {} ({} frames, kept {kept}, mean coverage {:.1}%)",
+                     dir.display(), seq.len(), 100.0 * mean);
+            println!("  manifest: {}", manifest_path.display());
             Ok(())
         }
         Some("render") => {
