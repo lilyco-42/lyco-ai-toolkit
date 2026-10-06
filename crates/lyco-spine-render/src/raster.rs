@@ -679,6 +679,7 @@ mod tests {
             &Fit {
                 margin: 0.0,
                 premultiplied_textures: true,
+                ..Fit::default()
             },
         )
         .expect("render");
