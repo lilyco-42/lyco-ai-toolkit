@@ -127,7 +127,11 @@ lyco-cli spine version model.skel      # 读出需要的 Spine 版本
 冷启动最慢的一步），以及 `rust-cache` 管的 `target/` 增量编译。
 
 **注意：`pma` 是 Spine 4.x 的键。** 往 3.8 的 atlas 里写 `pma: true` 会让 3.8 运行时
-**完全读不了那个文件** —— 实测确认，已在代码和 CLI 帮助里标注。
+**完全读不了那个文件** —— 实测确认（方舟素材池 561 组里 243 组带着它）。两条路都通：
+
+- **渲染时自动剥离**：`lyco-spine-render` 读取前把 3.8 认不了的字段剥掉（旁路写一份
+  临时 atlas，用完即删），561/561 全部可读可渲；
+- **离线修复**：`lyco-cli spine normalize <atlas> --strip-3-8` 把剥离结果写回文件。
 
 ## 验证
 

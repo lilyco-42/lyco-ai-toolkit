@@ -147,6 +147,47 @@ impl Atlas {
         }
     }
 
+    /// Drop page fields a Spine 3.8 runtime cannot read.
+    ///
+    /// A 3.8 parser is not lenient about page fields it does not know: one
+    /// unknown line and it refuses the *whole file*, rather than skipping the
+    /// line. `pma` is the field this happens with in the wild - it arrived with
+    /// 4.0, and an Arknights export carrying it is unreadable to any 3.8
+    /// runtime. Measured on one real pool: 243 of 561 atlases carried it.
+    ///
+    /// Idempotent, like every repair here: an atlas already readable by 3.8
+    /// comes back with `changed: false`.
+    pub fn strip_after_3_8(&self) -> Stripped {
+        let mut dropped: BTreeSet<usize> = BTreeSet::new();
+        let mut removed = Vec::new();
+        for page in &self.pages {
+            for field in &page.fields {
+                // Only the four fields 3.8 defines are kept. Anything else is
+                // newer than the reader, and naming it in `removed` keeps this
+                // from being a silent repair.
+                if PAGE_FIELDS_3_8.contains(&field.key.as_str()) {
+                    continue;
+                }
+                dropped.insert(field.line);
+                removed.push(format!("{}: {}: {}", page.name, field.key, field.value));
+            }
+        }
+
+        let text = self
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !dropped.contains(i))
+            .map(|(_, line)| line.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Stripped {
+            changed: !dropped.is_empty(),
+            text,
+            removed,
+        }
+    }
+
     /// Repair a page's `size` field, add `pma`, and optionally rename pages.
     ///
     /// Idempotent: normalizing an already-normalized atlas changes nothing and
@@ -253,6 +294,22 @@ pub struct Normalized {
     pub missing_size: Vec<String>,
     /// Pages whose declared size disagreed with the PNG and was corrected.
     pub fixed_size: Vec<String>,
+}
+
+/// The page fields a Spine 3.8 atlas is allowed to declare.
+///
+/// Everything else arrived with a later runtime. A 3.8 parser does not skip a
+/// field it does not recognise - it rejects the page, and with it the file - so
+/// this list is what a "readable by 3.8" repair keeps, not a stylistic choice.
+pub const PAGE_FIELDS_3_8: [&str; 4] = ["size", "format", "filter", "repeat"];
+
+/// The outcome of removing fields a Spine 3.8 runtime cannot read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stripped {
+    pub text: String,
+    pub changed: bool,
+    /// Every line that was removed, spelled `<page>: <key>: <value>`.
+    pub removed: Vec<String>,
 }
 
 /// Fit a page name to something safe to use as a local file name.
@@ -534,5 +591,115 @@ body
         assert_eq!(parse_size("8,x"), None);
         assert_eq!(parse_size("0,4"), None, "a zero-width page is not usable");
         assert_eq!(parse_size("8,0"), None);
+    }
+
+    /// The failure being repaired: an Arknights enemy atlas carries `pma`, a
+    /// 4.x field, and a 3.8 runtime then refuses the file outright.
+    #[test]
+    fn pma_is_removed_and_nothing_else_moves() {
+        let with_pma = "\
+enemy.png
+size: 216,216
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+pma: true
+C_Balloon
+  rotate: false
+  xy: 2, 3
+  size: 81, 183
+";
+        let atlas = Atlas::parse(with_pma);
+        assert!(atlas.info().has_pma, "the sample declares pma");
+
+        let stripped = atlas.strip_after_3_8();
+        assert!(stripped.changed);
+        assert_eq!(stripped.removed, vec!["enemy.png: pma: true".to_string()]);
+
+        let lines: Vec<&str> = stripped.text.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                "enemy.png",
+                "size: 216,216",
+                "format: RGBA8888",
+                "filter: Linear,Linear",
+                "repeat: none",
+                "C_Balloon",
+                "  rotate: false",
+                "  xy: 2, 3",
+                "  size: 81, 183",
+            ],
+            "only the pma line goes; the region and its own size stay"
+        );
+
+        // And the repaired atlas reads back as one 3.8 can consume.
+        let repaired = Atlas::parse(&stripped.text);
+        assert!(!repaired.info().has_pma);
+        assert!(repaired.info().has_size);
+        assert_eq!(repaired.pages()[0].size(), Some((216, 216)));
+        assert_eq!(repaired.pages()[0].regions, vec!["C_Balloon".to_string()]);
+    }
+
+    /// An attachment may well be named like a page field; only the page's own
+    /// lines are page fields.
+    #[test]
+    fn a_region_entry_of_the_same_name_survives_the_strip() {
+        let text = "p.png\nsize: 8,8\npma\n  rotate: false\n  index: -1\n";
+        let atlas = Atlas::parse(text);
+        let stripped = atlas.strip_after_3_8();
+        assert!(
+            !stripped.changed,
+            "'pma' here is a region, not a page field:\n{}",
+            stripped.text
+        );
+        assert_eq!(stripped.text, text);
+    }
+
+    #[test]
+    fn an_atlas_3_8_already_reads_is_left_alone() {
+        let stripped = Atlas::parse(SAMPLE).strip_after_3_8();
+        assert!(!stripped.changed);
+        assert!(stripped.removed.is_empty());
+        // Not merely equal, but byte-identical apart from line endings.
+        assert_eq!(stripped.text, SAMPLE.replace('\r', ""));
+    }
+
+    #[test]
+    fn stripping_twice_changes_nothing_the_second_time() {
+        let atlas = Atlas::parse("p.png\nsize: 8,8\npma: true\nr\n  xy: 0,0\n");
+        let once = atlas.strip_after_3_8();
+        assert!(once.changed);
+        let twice = Atlas::parse(&once.text).strip_after_3_8();
+        assert!(!twice.changed, "second strip rewrote:\n{}", twice.text);
+        assert_eq!(once.text, twice.text);
+    }
+
+    /// Every page is visited, and every field it cannot have is named.
+    #[test]
+    fn stripping_reports_every_page_field_it_removed() {
+        let atlas = Atlas::parse(
+            "a.png\nsize: 8,8\npma: true\n\n\
+             b.png\nsize: 16,16\npma: false\n  rotation: true\n",
+        );
+        let stripped = atlas.strip_after_3_8();
+        assert_eq!(
+            stripped.removed,
+            vec![
+                "a.png: pma: true".to_string(),
+                "b.png: pma: false".to_string(),
+                "b.png: rotation: true".to_string(),
+            ]
+        );
+        for line in stripped.text.lines() {
+            assert!(!line.contains("pma") && !line.contains("rotation"));
+        }
+    }
+
+    #[test]
+    fn an_empty_atlas_has_nothing_to_strip() {
+        let stripped = Atlas::parse("").strip_after_3_8();
+        assert!(!stripped.changed);
+        assert!(stripped.removed.is_empty());
     }
 }

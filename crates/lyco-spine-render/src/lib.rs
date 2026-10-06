@@ -177,11 +177,50 @@ fn check_version(src: &SpineSource) -> Result<()> {
     }
 }
 
+/// Hand the runtime an atlas it can actually read.
+///
+/// The runtime opens the atlas file itself, and a 3.8 parser that meets one
+/// page field it does not know - `pma`, which every Arknights enemy atlas
+/// carries - refuses the whole file. So the repair has to happen before the
+/// call, not after the failure.
+///
+/// Returns the path to read, plus that path again when it is a temporary copy
+/// the caller must delete. The copy sits *beside* the original because page
+/// images are resolved relative to the atlas.
+fn readable_atlas(path: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let stripped = AtlasText::parse(&text).strip_after_3_8();
+    if !stripped.changed {
+        return Ok((path.to_path_buf(), None));
+    }
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let mut temp = path.to_path_buf();
+    temp.set_file_name(format!(".lyco-3.8-{}-{nanos}.atlas", std::process::id()));
+    std::fs::write(&temp, &stripped.text)
+        .with_context(|| format!("cannot write a cleaned copy beside {}", path.display()))?;
+    Ok((temp.clone(), Some(temp)))
+}
+
 /// Load the skeleton data, binary or JSON.
 fn load(src: &SpineSource) -> Result<Arc<SkeletonData>> {
     check_version(src)?;
+    let (atlas_path, cleanup) = readable_atlas(&src.atlas)?;
+    let loaded = build(src, &atlas_path);
+    if let Some(temp) = cleanup {
+        // Nothing keeps reading the file once the skeleton data is built.
+        let _ = std::fs::remove_file(&temp);
+    }
+    loaded
+}
+
+fn build(src: &SpineSource, atlas_path: &Path) -> Result<Arc<SkeletonData>> {
     let atlas = Arc::new(
-        SpineAtlas::new_from_file(&src.atlas)
+        SpineAtlas::new_from_file(atlas_path)
             .with_context(|| format!("cannot read {}", src.atlas.display()))?,
     );
     let data = if src.binary {

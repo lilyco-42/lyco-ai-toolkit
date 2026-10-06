@@ -27,6 +27,9 @@ pub mod atlas;
 pub mod png;
 pub mod skel;
 
-pub use atlas::{parse_size, sanitize_page_name, Atlas, AtlasInfo, Normalize, Normalized, Page};
+pub use atlas::{
+    parse_size, sanitize_page_name, Atlas, AtlasInfo, Normalize, Normalized, Page, Stripped,
+    PAGE_FIELDS_3_8,
+};
 pub use png::png_size;
 pub use skel::{read_header, RuntimeFamily, SkelHeader};

@@ -164,6 +164,9 @@ enum SpineCmd {
         /// Declare premultiplied alpha on every page that does not say
         #[arg(long)]
         pma: bool,
+        /// Remove page fields a Spine 3.8 runtime cannot read, pma above all
+        #[arg(long)]
+        strip_3_8: bool,
         /// Also rewrite page names to safe local file names
         #[arg(long)]
         sanitize: bool,
@@ -508,6 +511,7 @@ fn run_spine(cmd: SpineCmd) -> Result<()> {
             out,
             write,
             pma,
+            strip_3_8,
             sanitize,
         } => {
             let text =
@@ -555,26 +559,44 @@ fn run_spine(cmd: SpineCmd) -> Result<()> {
                 renames,
             };
             let result = atlas.normalize(&opts);
+            // Stripping runs last, so it wins over `--pma`: asking for both at
+            // once is asking for a file no reader can open.
+            let stripped = Atlas::parse(&result.text).strip_after_3_8();
+            let text = if stripped.changed {
+                &stripped.text
+            } else {
+                &result.text
+            };
+            let changed = result.changed || stripped.changed;
+
+            if pma && strip_3_8 {
+                eprintln!(
+                    "--pma and --strip-3-8 want opposite things; the pma lines were removed anyway"
+                );
+            }
             for page in &result.fixed_size {
                 eprintln!("{page}: size was wrong and was corrected from the PNG");
             }
             for page in &result.missing_size {
                 eprintln!("{page}: size is unknown, so it was left alone");
             }
+            for field in &stripped.removed {
+                eprintln!("removed {field}, which a Spine 3.8 runtime cannot read");
+            }
 
             if write {
-                std::fs::write(&atlas_path, &result.text)?;
+                std::fs::write(&atlas_path, text)?;
                 println!("rewrote {}", atlas_path.display());
             } else if let Some(out) = &out {
-                std::fs::write(out, &result.text)?;
+                std::fs::write(out, text)?;
                 println!("wrote {out}");
             } else {
                 // No destination means print, so the result can be piped.
-                print!("{}", result.text);
-                eprintln!("changed: {}", result.changed);
+                print!("{text}");
+                eprintln!("changed: {changed}");
                 return Ok(());
             }
-            println!("changed: {}", result.changed);
+            println!("changed: {changed}");
             Ok(())
         }
     }
