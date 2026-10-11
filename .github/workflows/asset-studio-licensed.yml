@@ -110,6 +110,7 @@ jobs:
           import hashlib,json,os,pathlib,zipfile
           root=pathlib.Path('dist/Lain42-Asset-Studio')
           manifest={'commit':os.environ['APP_COMMIT'],'spine_source_commit':os.environ['GITHUB_SHA'],'spine_runtime_revision':'4ff8b7280aeb7367f235752c30dc85184c01452a','runner':os.environ['RUNNER_OS'],'contains_spine_runtime':True,'runtime_license':'Spine Runtimes License Agreement','files':{p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}}
+          manifest['release_id']=hashlib.sha1((manifest['commit']+'\n'+manifest['spine_source_commit']).encode()).hexdigest()
           (root/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
           target=pathlib.Path('dist')/('lain42-asset-studio-'+os.environ['RUNNER_OS'].lower()+'.zip')
           with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as archive:
@@ -117,6 +118,7 @@ jobs:
                   if p.is_file(): archive.write(p,p.relative_to(root.parent).as_posix())
           target.with_suffix('.zip.sha256').write_text(hashlib.sha256(target.read_bytes()).hexdigest()+'\n',encoding='ascii')
           summary={'app_commit':os.environ['APP_COMMIT'],'spine_source_commit':os.environ['GITHUB_SHA'],'platform':os.environ['RUNNER_OS'].lower(),'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'size':target.stat().st_size,'contains_spine_runtime':True}
+          summary['release_id']=manifest['release_id']
           (target.parent/'package-evidence.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
           print(json.dumps(summary))
           PY
