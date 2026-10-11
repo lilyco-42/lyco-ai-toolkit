@@ -26,3 +26,7 @@ Linux 另有桌面/手机尺寸浏览器验收；打包后再次调用两个真�
 公共界面已合并为 `68a277cffda967be38e2b729d2011df0a0be0d40`。
 默认授权整合构建固定这个 main 版本，禁止用 PR 的 merge sample 冒充正式交付。
 CI 先完整保存 Spine 信息输出再检查内容，避免 `grep -q` 提前关闭管道导致 SIGPIPE 误报。
+
+## 原生界面与安装器门禁
+
+界面使用同一个 React/shadcn 静态产物，Windows WebView2 不暴露 Python API。安装器为当前用户安装，卸载仅删除包内明确列出的文件。独立产品 CI 也必须通过真实 WebView2 的 AIC 预览、导出与正常关闭清理，安装后的完整应用再次验证 AIC + Spine，然后卸载并验证用户自存文件保留。构建、前端检查与全部测试只在 GitHub Actions，未通过不发布。

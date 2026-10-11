@@ -17,7 +17,7 @@ concurrency:
   group: asset-studio-licensed-${{ github.ref }}
   cancel-in-progress: true
 env:
-  APP_COMMIT: ${{ inputs.app_commit || '68a277cffda967be38e2b729d2011df0a0be0d40' }}
+  APP_COMMIT: ${{ inputs.app_commit || '9e751ac41b95faa3ef89fc42d27ab8a8b31a2e82' }}
 jobs:
   build:
     strategy:
@@ -49,6 +49,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the actual shadcn workspace
+        working-directory: asset-app/apps/asset-studio/ui
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
       - name: Check and build the existing Spine engine
         shell: bash
         run: |
@@ -92,7 +100,7 @@ jobs:
           node tests/ui.mjs
       - name: Build the complete local application
         working-directory: asset-app/apps/asset-studio
-        run: python -m PyInstaller --noconfirm --name Lain42-Asset-Studio --add-data "frontend:frontend" --add-data "bin:bin" --collect-submodules uvicorn launcher.py
+        run: python packaging/build-app.py
       - name: Preserve licenses and dependency notices
         working-directory: asset-app/apps/asset-studio
         run: python tests/notices.py
@@ -109,6 +117,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/LICENSE" dist/Lain42-Asset-Studio/SPINE-TOOL-SOURCE-LICENSE
           cp "$GITHUB_WORKSPACE/Cargo.lock" dist/Lain42-Asset-Studio/SPINE-Cargo.lock
           cp ../../Cargo.lock dist/Lain42-Asset-Studio/AIC-Cargo.lock
+          cp ui/package-lock.json dist/Lain42-Asset-Studio/UI-package-lock.json
           python - <<'PY'
           import hashlib,json,os,pathlib,zipfile
           root=pathlib.Path('dist/Lain42-Asset-Studio')
@@ -125,6 +134,31 @@ jobs:
           (target.parent/'package-evidence.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
           print(json.dumps(summary))
           PY
+      - name: Prepare Windows native acceptance and installer tools
+        if: runner.os == 'Windows'
+        working-directory: asset-app/apps/asset-studio
+        shell: pwsh
+        run: |
+          npm install --no-save playwright@1.56.1
+          python tests/fixture.py tests/demo.pxls
+          choco install nsis -y --no-progress
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile webview2-bootstrap.exe
+          $signature = Get-AuthenticodeSignature webview2-bootstrap.exe
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Invalid WebView2 bootstrap signature' }
+          $setup = Start-Process ./webview2-bootstrap.exe -ArgumentList '/silent','/install' -Wait -PassThru -WindowStyle Hidden
+          if ($setup.ExitCode -notin 0,3010) { throw "WebView2 install failed: $($setup.ExitCode)" }
+      - name: Verify real packaged WebView2, export and normal close
+        if: runner.os == 'Windows'
+        working-directory: asset-app/apps/asset-studio
+        run: node tests/desktop_smoke.mjs dist/Lain42-Asset-Studio/Lain42-Asset-Studio.exe
+      - name: Build and exercise the Windows installation EXE
+        if: runner.os == 'Windows'
+        working-directory: asset-app/apps/asset-studio
+        run: |
+          python packaging/windows-installer.py
+          python tests/installer_smoke.py
+        env:
+          EXPECT_SPINE: 'true'
       - uses: actions/upload-artifact@v4
         with:
           name: asset-studio-licensed-${{ runner.os }}-${{ github.sha }}
@@ -132,5 +166,7 @@ jobs:
           path: |
             asset-app/apps/asset-studio/dist/*.zip
             asset-app/apps/asset-studio/dist/*.sha256
+            asset-app/apps/asset-studio/dist/*-setup.exe
+            asset-app/apps/asset-studio/ui/package-lock.json
             asset-app/apps/asset-studio/dist/package-evidence.json
             asset-app/apps/asset-studio/evidence/*
