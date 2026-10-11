@@ -395,6 +395,15 @@ jobs:
           grep -q 'declares size: true' "$d/after.txt"
           grep -q 'declares pma : true' "$d/after.txt"
 
+          # Only an explicit 3.8 conversion strips modern page fields.
+          ./target/debug/lyco-cli spine normalize "$d/pma.atlas" --dir "$d" --strip-3-8 > "$d/legacy.atlas"
+          if grep -q '^pma:' "$d/legacy.atlas"; then
+            echo 'explicit Spine 3.8 conversion retained an unsupported field'
+            exit 1
+          fi
+          grep -q '^size: 64,64$' "$d/legacy.atlas"
+          ./target/debug/lyco-cli spine info "$d/legacy.atlas" | grep -q 'regions: 1'
+
           # A page whose PNG is absent must be reported, not invented.
           ./target/debug/lyco-cli spine normalize "$d/model.atlas" --dir "$d/nothing" \
             > "$d/orphan.atlas" 2> "$d/orphan.err"
@@ -402,7 +411,7 @@ jobs:
             echo 'a size was invented for a page with no PNG'
             exit 1
           fi
-          grep -q 'cannot be repaired' "$d/orphan.err"
+          grep -q 'size is unknown, so it was left alone' "$d/orphan.err"
 
       # A real export must name its Spine version, because the version decides
       # which runtimes can open it at all. These are the first 35 bytes of a

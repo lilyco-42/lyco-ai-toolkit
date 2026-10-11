@@ -562,12 +562,12 @@ fn run_spine(cmd: SpineCmd) -> Result<()> {
             // Stripping runs last, so it wins over `--pma`: asking for both at
             // once is asking for a file no reader can open.
             let stripped = Atlas::parse(&result.text).strip_after_3_8();
-            let text = if stripped.changed {
+            let text = if strip_3_8 && stripped.changed {
                 &stripped.text
             } else {
                 &result.text
             };
-            let changed = result.changed || stripped.changed;
+            let changed = result.changed || (strip_3_8 && stripped.changed);
 
             if pma && strip_3_8 {
                 eprintln!(
@@ -580,8 +580,10 @@ fn run_spine(cmd: SpineCmd) -> Result<()> {
             for page in &result.missing_size {
                 eprintln!("{page}: size is unknown, so it was left alone");
             }
-            for field in &stripped.removed {
-                eprintln!("removed {field}, which a Spine 3.8 runtime cannot read");
+            if strip_3_8 {
+                for field in &stripped.removed {
+                    eprintln!("removed {field}, which a Spine 3.8 runtime cannot read");
+                }
             }
 
             if write {
