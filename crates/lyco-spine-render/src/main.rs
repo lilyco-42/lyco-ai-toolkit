@@ -184,7 +184,8 @@ fn main() -> Result<()> {
             let seq = parts_sequence(&src, &req, frames, fps, body_only)?;
 
             let dir = PathBuf::from(out);
-            std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("cannot create {}", dir.display()))?;
             let keep = match flag(&args, "--keep") {
                 Some(text) => text.parse::<f32>().context("bad --keep")?,
                 None => 0.0,
@@ -200,7 +201,7 @@ fn main() -> Result<()> {
             let mut kept = 0;
             for (i, frame) in seq.iter().enumerate() {
                 let tag = format!("frame_{:05}", i);
-                let rgb_path = dir.join(format!("{tag}_rgb.png", ));
+                let rgb_path = dir.join(format!("{tag}_rgb.png",));
                 let lab_path = dir.join(format!("{tag}_labels.png"));
                 frame.rgb.save(&rgb_path)?;
                 frame.labels.save(&lab_path)?;
@@ -211,7 +212,11 @@ fn main() -> Result<()> {
                 } else {
                     kept += 1;
                 }
-                manifest.push_str(&format!("{}\t{:.4}", if drop { "DROP" } else { &tag }, frame.coverage));
+                manifest.push_str(&format!(
+                    "{}\t{:.4}",
+                    if drop { "DROP" } else { &tag },
+                    frame.coverage
+                ));
                 for count in &frame.counts {
                     manifest.push('\t');
                     manifest.push_str(&count.to_string());
@@ -222,8 +227,12 @@ fn main() -> Result<()> {
             std::fs::write(&manifest_path, manifest)?;
 
             let mean: f32 = seq.iter().map(|f| f.coverage).sum::<f32>() / seq.len() as f32;
-            println!("wrote {} ({} frames, kept {kept}, mean coverage {:.1}%)",
-                     dir.display(), seq.len(), 100.0 * mean);
+            println!(
+                "wrote {} ({} frames, kept {kept}, mean coverage {:.1}%)",
+                dir.display(),
+                seq.len(),
+                100.0 * mean
+            );
             println!("  manifest: {}", manifest_path.display());
             Ok(())
         }
