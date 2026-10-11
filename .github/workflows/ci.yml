@@ -402,7 +402,8 @@ jobs:
             exit 1
           fi
           grep -q '^size: 64,64$' "$d/legacy.atlas"
-          ./target/debug/lyco-cli spine info "$d/legacy.atlas" | grep -q 'regions: 1'
+          ./target/debug/lyco-cli spine info "$d/legacy.atlas" > "$d/legacy-info.txt"
+          grep -q 'regions: 1' "$d/legacy-info.txt"
 
           # A page whose PNG is absent must be reported, not invented.
           ./target/debug/lyco-cli spine normalize "$d/model.atlas" --dir "$d/nothing" \
