@@ -45,6 +45,7 @@ jobs:
             . -> target
             asset-app -> target
           key: asset-studio-licensed
+          cache-on-failure: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -59,7 +60,7 @@ jobs:
         working-directory: asset-app
         shell: bash
         run: |
-          cargo test --locked -p lilyco-aic --no-default-features --features android
+          cargo test -p lilyco-aic --no-default-features --features android
           cargo build --locked --release -p lilyco-aic --no-default-features --features android
       - name: Install the local app and acceptance dependencies
         run: python -m pip install -r asset-app/apps/asset-studio/requirements.txt httpx==0.28.1 pillow==11.3.0 pyinstaller==6.16.0
@@ -106,6 +107,8 @@ jobs:
         run: |
           cp ../../LICENSE README.md THIRD-PARTY-NOTICES.json SPINE-RUNTIME-LICENSE.html dist/Lain42-Asset-Studio/
           cp "$GITHUB_WORKSPACE/LICENSE" dist/Lain42-Asset-Studio/SPINE-TOOL-SOURCE-LICENSE
+          cp "$GITHUB_WORKSPACE/Cargo.lock" dist/Lain42-Asset-Studio/SPINE-Cargo.lock
+          cp ../../Cargo.lock dist/Lain42-Asset-Studio/AIC-Cargo.lock
           python - <<'PY'
           import hashlib,json,os,pathlib,zipfile
           root=pathlib.Path('dist/Lain42-Asset-Studio')
