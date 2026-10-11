@@ -17,7 +17,7 @@ concurrency:
   group: asset-studio-licensed-${{ github.ref }}
   cancel-in-progress: true
 env:
-  APP_COMMIT: ${{ inputs.app_commit || '9e751ac41b95faa3ef89fc42d27ab8a8b31a2e82' }}
+  APP_COMMIT: ${{ inputs.app_commit || 'e6529726c9ae2520850791dd655b8175f14c24a1' }}
 jobs:
   build:
     strategy:
@@ -55,7 +55,7 @@ jobs:
       - name: Build the actual shadcn workspace
         working-directory: asset-app/apps/asset-studio/ui
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
       - name: Check and build the existing Spine engine
         shell: bash
@@ -159,6 +159,12 @@ jobs:
           python tests/installer_smoke.py
         env:
           EXPECT_SPINE: 'true'
+      - name: Preserve failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-studio-failure-${{ runner.os }}-${{ github.sha }}
+          path: asset-app/apps/asset-studio/evidence/
       - uses: actions/upload-artifact@v4
         with:
           name: asset-studio-licensed-${{ runner.os }}-${{ github.sha }}
