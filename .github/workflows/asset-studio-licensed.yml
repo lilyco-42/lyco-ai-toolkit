@@ -13,11 +13,14 @@ on:
         type: string
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: asset-studio-licensed-${{ github.ref }}
   cancel-in-progress: true
 env:
-  APP_COMMIT: ${{ inputs.app_commit || '80e7e03930115cf93e32fc3d628bc370ff869196' }}
+  APP_COMMIT: ${{ inputs.app_commit || '04c7d34ed931f1e44ed800d490d39100b1b9cf11' }}
 jobs:
   build:
     strategy:
@@ -118,6 +121,10 @@ jobs:
           cp "$GITHUB_WORKSPACE/Cargo.lock" dist/Lain42-Asset-Studio/SPINE-Cargo.lock
           cp ../../Cargo.lock dist/Lain42-Asset-Studio/AIC-Cargo.lock
           cp ui/package-lock.json dist/Lain42-Asset-Studio/UI-package-lock.json
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp MICROSOFT-WEBVIEW2-LICENSE.txt dist/Lain42-Asset-Studio/
+            cp packaging/webview2-sdk.json dist/Lain42-Asset-Studio/webview2-sdk.json
+          fi
           python - <<'PY'
           import hashlib,json,os,pathlib,zipfile
           root=pathlib.Path('dist/Lain42-Asset-Studio')
