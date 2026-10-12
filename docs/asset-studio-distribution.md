@@ -29,4 +29,11 @@ CI 先完整保存 Spine 信息输出再检查内容，避免 `grep -q` 提前�
 
 ## 原生界面与安装器门禁
 
+0.1.1 组合包固定公共正式 main `04c7d34ed931f1e44ed800d490d39100b1b9cf11`，补齐
+Microsoft.Web.WebView2 SDK 1.0.3856.49 独立 BSD-3-Clause 许可、官方来源与五个 DLL 摘要。
+公共应用的 notice collector 对照官方 NuGet 包核验安装依赖与最终冻结 DLL；授权组合工作流
+再把原始 SDK LICENSE.txt 和来源 pin 放进 Windows ZIP／安装 EXE，完整 manifest 覆盖它们。
+SDK 与运行时为不同组件，SDK 署名不能代替 Spine Runtime 的独立许可，两者同时保留。
+正式组合包需公共 main 及本库当前源码的全部门通过；候选 PR 包不作为正式交付。
+
 界面使用同一个 React/shadcn 静态产物，Windows WebView2 不暴露 Python API。安装器为当前用户安装，卸载仅删除包内明确列出的文件。独立产品 CI 也必须通过真实 WebView2 的 AIC 预览、导出与正常关闭清理，安装后的完整应用再次验证 AIC + Spine，然后卸载并验证用户自存文件保留。构建、前端检查与全部测试只在 GitHub Actions，未通过不发布。
