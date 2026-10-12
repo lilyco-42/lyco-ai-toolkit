@@ -23,13 +23,13 @@ Linux 另有桌面/手机尺寸浏览器验收；打包后再次调用两个真�
 `--strip-3-8`。已修复为只在显式 3.8 转换时删除，并增加命令级回归检查；未知 PNG
 尺寸提示的旧文本断言同步到实际说明。没有改动解析器或渲染逻辑。
 
-当前默认授权整合构建固定公共 main `04c7d34ed931f1e44ed800d490d39100b1b9cf11`，
+当前默认授权整合构建固定公共 main `e5f9fd66fa69be3e027697d7d2bffe8bc54e5ea0`，
 禁止用 PR 的 merge sample 冒充正式交付；更新包尚需当前正式门全部通过。
 CI 先完整保存 Spine 信息输出再检查内容，避免 `grep -q` 提前关闭管道导致 SIGPIPE 误报。
 
 ## 原生界面与安装器门禁
 
-0.1.1 组合包固定公共正式 main `04c7d34ed931f1e44ed800d490d39100b1b9cf11`，补齐
+0.1.1 组合包固定公共正式 main `e5f9fd66fa69be3e027697d7d2bffe8bc54e5ea0`，补齐
 Microsoft.Web.WebView2 SDK 1.0.3856.49 独立 BSD-3-Clause 许可、官方来源与五个 DLL 摘要。
 公共应用的 notice collector 对照官方 NuGet 包核验安装依赖与最终冻结 DLL；授权组合工作流
 再把原始 SDK LICENSE.txt 和来源 pin 放进 Windows ZIP／安装 EXE，完整 manifest 覆盖它们。
