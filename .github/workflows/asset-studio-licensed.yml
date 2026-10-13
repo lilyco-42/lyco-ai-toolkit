@@ -20,9 +20,11 @@ concurrency:
   group: asset-studio-licensed-${{ github.ref }}
   cancel-in-progress: true
 env:
-  APP_COMMIT: ${{ inputs.app_commit || 'a308ad03671a2b8d415b85ff2d7e2e7bfc42796b' }}
+  APP_COMMIT: ${{ inputs.app_commit || '89174d5df61dd22725643a5b21b40a212e7fa12f' }}
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -172,14 +174,17 @@ jobs:
         with:
           name: asset-studio-failure-${{ runner.os }}-${{ github.sha }}
           path: asset-app/apps/asset-studio/evidence/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asset-studio-licensed-${{ runner.os }}-${{ github.sha }}
-          if-no-files-found: error
-          path: |
-            asset-app/apps/asset-studio/dist/*.zip
-            asset-app/apps/asset-studio/dist/*.sha256
-            asset-app/apps/asset-studio/dist/*-setup.exe
-            asset-app/apps/asset-studio/ui/package-lock.json
-            asset-app/apps/asset-studio/dist/package-evidence.json
-            asset-app/apps/asset-studio/evidence/*
+      - name: Verify immutable draft retention policy
+        run: python -m unittest discover -s tests -p test_store_ci_draft.py -v
+      - name: Preserve exact licensed product and icon receipts in an unpublished CI draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/store_ci_draft.py
+          --name asset-studio-licensed-${{ runner.os == 'Windows' && 'windows' || 'linux' }}
+          --path 'asset-app/apps/asset-studio/dist/*.zip'
+          --path 'asset-app/apps/asset-studio/dist/*.sha256'
+          --path 'asset-app/apps/asset-studio/dist/*-setup.exe'
+          --path 'asset-app/apps/asset-studio/ui/package-lock.json'
+          --path 'asset-app/apps/asset-studio/dist/package-evidence.json'
+          --path 'asset-app/apps/asset-studio/evidence/'
