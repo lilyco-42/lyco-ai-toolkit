@@ -181,7 +181,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python scripts/store_ci_draft.py
-          --name asset-studio-licensed-${{ runner.os }}
+          --name asset-studio-licensed-${{ runner.os == 'Windows' && 'windows' || 'linux' }}
           --path 'asset-app/apps/asset-studio/dist/*.zip'
           --path 'asset-app/apps/asset-studio/dist/*.sha256'
           --path 'asset-app/apps/asset-studio/dist/*-setup.exe'
