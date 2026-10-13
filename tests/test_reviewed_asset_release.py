@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import zipfile
 
 spec = importlib.util.spec_from_file_location('reviewed_asset', Path(__file__).parents[1] / 'scripts/reviewed_asset_release.py')
@@ -49,6 +50,20 @@ class FullProductPolicyTests(unittest.TestCase):
         self.assertFalse(module.full_agreement_matches(record, written.replace('Third', 'Changed'), 'Windows'))
         self.assertFalse(module.full_agreement_matches(record, record.replace('\r\n', '\n'), 'Windows'))
 
+    def test_icon_changed_bytes_and_incomplete_or_wrong_platform_notice_are_rejected(self):
+        source, icon = b'own-source-fixture', b'own-icon-fixture'
+        notice = 'Own complete fixture.\nSecond line.\r\n'
+        with patch.object(module, 'ICON_SOURCE_SHA', module.sha(source)), patch.object(module, 'ICON_SHA', module.sha(icon)):
+            module.validate_icon_payload(source, icon, notice, notice, 'Linux')
+            written = notice.replace('\n', '\r\n')
+            module.validate_icon_payload(source, icon, written, notice, 'Windows')
+            for args in [(source + b'changed', icon, notice, notice, 'Linux'),
+                         (source, icon + b'changed', notice, notice, 'Linux'),
+                         (source, icon, 'incomplete', notice, 'Linux'),
+                         (source, icon, written, notice, 'Linux')]:
+                with self.subTest(args=args), self.assertRaises(ValueError):
+                    module.validate_icon_payload(*args)
+
     def package(self, bad=None):
         agreement = 'Spine Runtimes License Agreement\n' + 'Own policy fixture.\n' * 80
         records = {'_internal/bin/laic': b'\x7fELF' + b'own-test-fixture' * 100,
@@ -57,7 +72,7 @@ class FullProductPolicyTests(unittest.TestCase):
                    'THIRD-PARTY-NOTICES.json': json.dumps([{'ecosystem': 'Spine Runtimes',
                      'license': 'Spine Runtimes License Agreement (not MIT)',
                      'notices': {'current-agreement': agreement}}]).encode(),
-                   'UI-package-lock.json': json.dumps({'version': '0.1.1'}).encode()}
+                   'UI-package-lock.json': json.dumps({'version': '0.1.2'}).encode()}
         for name in ('LICENSE', 'SPINE-TOOL-SOURCE-LICENSE', 'SPINE-Cargo.lock', 'AIC-Cargo.lock'):
             records[name] = b'Own fixture, never shipped as a license. ' * 10
         if bad == 'platform-newlines':

@@ -28,13 +28,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: lilyco-42/lilyco
-          ref: a308ad03671a2b8d415b85ff2d7e2e7bfc42796b
+          ref: 89174d5df61dd22725643a5b21b40a212e7fa12f
           path: public-app
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Rejection policy and exact full-product manifest regressions
         run: |
+          python -m pip install pefile==2024.8.26
           python -m unittest discover -s tests -p test_reviewed_asset_release.py -v
           python -m unittest discover -s tests -p test_store_ci_draft.py -v
       - name: Read actual formal archives, native/installed receipts and independent SDK bytes

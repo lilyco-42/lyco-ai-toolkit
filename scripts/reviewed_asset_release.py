@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import subprocess
+import sys
+import tempfile
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -12,10 +14,12 @@ import zipfile
 
 REPO = 'lilyco-42/lyco-ai-toolkit'
 APP_REPO = 'lilyco-42/lilyco'
-APP = 'a308ad03671a2b8d415b85ff2d7e2e7bfc42796b'
-SOURCE = '336cddb47b340d2c33a6ef3041a438d28bbd1dad'
-SOURCE_RUN = 38340868199
+APP = '89174d5df61dd22725643a5b21b40a212e7fa12f'
+SOURCE = '85ddd9758a74e7948db65e17a1f4158161d267b5'
+SOURCE_RUN = 38446052892
 PREFIX = 'Lain42-Asset-Studio/'
+ICON_SOURCE_SHA = '668059834636febc2df2fa467d5009c922bd3b973ef61370a3be9e7cf66198e1'
+ICON_SHA = '4dd1c08f4c444cc456b64217fa1b40bc30e21199f0ad66ee2d7a9aebdc180b01'
 LIMIT = 200 * 1024 * 1024
 
 
@@ -44,30 +48,47 @@ def required_flags(receipt, flags):
         raise ValueError('Missing actual behavior evidence')
 
 
-def artifact_bytes(item):
-    if item['expired'] or item['workflow_run']['id'] != SOURCE_RUN:
-        raise ValueError('Artifact not from the exact source run')
+def formal_draft():
+    tag = f'ci-draft-{SOURCE_RUN}-{SOURCE[:12]}'
+    matches = []
+    page = 1
+    while True:
+        rows = github('releases?per_page=100&page=' + str(page))
+        matches.extend(r for r in rows if r['tag_name'] == tag)
+        if len(rows) < 100:
+            break
+        page += 1
+    if len(matches) != 1:
+        raise ValueError('Exact formal draft missing or ambiguous')
+    release = matches[0]
+    if release.get('draft') is not True or release['target_commitish'] != SOURCE:
+        raise ValueError('Reject published or unrelated draft')
+    return release
+
+
+def draft_bytes(item):
+    if item.get('state') != 'uploaded' or item['size'] > LIMIT:
+        raise ValueError('Incomplete or oversized formal asset')
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args):
             return None
-    request = urllib.request.Request(f'https://api.github.com/repos/{REPO}/actions/artifacts/{item["id"]}/zip',
-        headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+    request = urllib.request.Request(f'https://api.github.com/repos/{REPO}/releases/assets/{item["id"]}',
+        headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/octet-stream'})
     try:
         urllib.request.build_opener(NoRedirect()).open(request, timeout=45)
-        raise ValueError('Expected official artifact redirect')
+        raise ValueError('Expected official private asset redirect')
     except urllib.error.HTTPError as error:
         if error.code != 302:
-            raise ValueError('Artifact retrieval refused') from None
+            raise ValueError('Formal draft retrieval refused') from None
         location = error.headers['Location']
     parsed = urlsplit(location)
-    if parsed.scheme != 'https' or not parsed.hostname.endswith('.blob.core.windows.net'):
-        raise ValueError('Unexpected artifact origin')
+    if parsed.scheme != 'https' or parsed.hostname not in {'release-assets.githubusercontent.com', 'objects.githubusercontent.com'}:
+        raise ValueError('Unexpected private draft byte origin')
     with urllib.request.urlopen(location, timeout=120) as response:
         data = response.read(LIMIT + 1)
-    if len(data) > LIMIT or 'sha256:' + sha(data) != item['digest']:
-        raise ValueError('Outer artifact digest differs')
+    if len(data) > LIMIT or len(data) != item['size'] or 'sha256:' + sha(data) != item['digest']:
+        raise ValueError('Outer formal draft digest differs')
     return data
-
 
 def members(data):
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -130,7 +151,7 @@ def inspect_package(data, platform):
         for name in ('LICENSE', 'SPINE-TOOL-SOURCE-LICENSE', 'SPINE-Cargo.lock', 'AIC-Cargo.lock'):
             if len(archive.read(PREFIX + name)) < 100:
                 raise ValueError('Required source attribution missing')
-        if json.loads(archive.read(PREFIX + 'UI-package-lock.json'))['version'] != '0.1.1':
+        if json.loads(archive.read(PREFIX + 'UI-package-lock.json'))['version'] != '0.1.2':
             raise ValueError('Wrong desktop product version')
         if platform == 'Windows':
             pin = json.loads(Path('public-app/apps/asset-studio/packaging/webview2-sdk.json').read_text())
@@ -150,6 +171,49 @@ def inspect_package(data, platform):
                 'full_spine_notice_verified': True, 'both_original_native_engines_present': True}
 
 
+def validate_icon_payload(source, icon, license_text, expected_license, platform):
+    if sha(source) != ICON_SOURCE_SHA or sha(icon) != ICON_SHA:
+        raise ValueError('Original Lyco artwork differs')
+    if not full_agreement_matches(expected_license, license_text, platform):
+        raise ValueError('Complete distinct IP notice differs')
+
+
+def inspect_icons(package, files, platform):
+    expected_license = Path('public-app/apps/asset-studio/resources/ICON-LICENSE.md').read_text(encoding='utf-8')
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        source = archive.read(PREFIX + '_internal/resources/icon-source.png')
+        icon = archive.read(PREFIX + '_internal/resources/app.ico')
+        license_text = archive.read(PREFIX + '_internal/resources/ICON-LICENSE.md').decode('utf-8')
+        validate_icon_payload(source, icon, license_text, expected_license, platform)
+        if platform == 'Windows':
+            build = json.loads(files['evidence/icon-build.json'])
+            native = json.loads(files['evidence/windows-native.json'])
+            startup = json.loads(files['evidence/native-startup.json'])
+            required_flags(native, ['native_icon_applied'])
+            required_flags(startup, ['native_icon_applied'])
+            required_flags(build['executable'], ['all_original_icon_frames_embedded'])
+            if (build['source_sha256'] != ICON_SOURCE_SHA or build['ico_sha256'] != ICON_SHA
+                    or build['sizes'] != [16, 24, 32, 48, 64, 128, 256]
+                    or startup['native_icon_sha256'] != ICON_SHA):
+                raise ValueError('Actual icon receipts differ')
+            executable = archive.read(PREFIX + 'Lain42-Asset-Studio.exe')
+            installer = files['dist/lain42-asset-studio-windows-setup.exe']
+            installer_icon = json.loads(files['evidence/installer-icon.json'])
+            required_flags(installer_icon, ['all_original_icon_frames_embedded'])
+            if (sha(executable) != build['executable']['executable_sha256']
+                    or sha(installer) != installer_icon['executable_sha256']
+                    or installer_icon['icon_sha256'] != ICON_SHA):
+                raise ValueError('Different EXE or setup from actual icon gates')
+            sys.path.insert(0, str(Path('public-app/apps/desktop-common').resolve()))
+            from desktop_icons import verify_embedded_icon
+            with tempfile.TemporaryDirectory(prefix='review-lyco-pe-') as directory:
+                root = Path(directory)
+                (root / 'app.ico').write_bytes(icon)
+                for label, data in [('app', executable), ('setup', installer)]:
+                    target = root / (label + '.exe')
+                    target.write_bytes(data)
+                    verify_embedded_icon(target, root / 'app.ico')
+
 def main():
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('GITHUB_REPOSITORY') != REPO:
         raise SystemExit('Byte review only in this repository Actions')
@@ -157,7 +221,7 @@ def main():
     subprocess.run(['git', 'diff', '--exit-code', SOURCE, 'HEAD', '--', 'crates', 'Cargo.toml', 'Cargo.lock',
                     '.github/workflows/asset-studio-licensed.yml'], check=True)
     for repo, commit, expected in [(REPO, SOURCE, {'ci', 'Licensed Asset Studio'}),
-                                 (APP_REPO, APP, {'CI', 'Asset Studio', 'Vision Studio Desktop'})]:
+                                 (APP_REPO, APP, {'CI', 'Asset Studio'})]:
         latest = {}
         for run in sorted(github('actions/runs?head_sha=' + commit + '&per_page=100', repo)['workflow_runs'], key=lambda x: x['id'], reverse=True):
             if run['head_branch'] == 'main' and run['event'] == 'push':
@@ -176,15 +240,19 @@ def main():
         if 'windows' in job['name'].lower() and not {'Verify real packaged WebView2, export and normal close',
                 'Build and exercise the Windows installation EXE'} <= success:
             raise ValueError('Missing real native or installed engine gates')
-    artifacts = github(f'actions/runs/{SOURCE_RUN}/artifacts?per_page=100')['artifacts']
+    release = formal_draft()
     output = Path('reviewed-release')
     output.mkdir(exist_ok=True)
     reviews, assets = [], []
     for platform in ('Windows', 'Linux'):
-        selected = [a for a in artifacts if a['name'] == f'asset-studio-licensed-{platform}-{SOURCE}' and not a['expired']]
+        selected = [a for a in release['assets'] if a['name'] == f'asset-studio-licensed-{platform.lower()}.zip']
         if len(selected) != 1:
-            raise ValueError('Exact formal artifact missing or ambiguous')
-        files = members(artifact_bytes(selected[0]))
+            raise ValueError('Exact formal platform asset missing or ambiguous')
+        raw = members(draft_bytes(selected[0]))
+        base = 'asset-app/apps/asset-studio/'
+        if any(not name.startswith(base) for name in raw):
+            raise ValueError('Unexpected formal archive root')
+        files = {name[len(base):]: data for name, data in raw.items()}
         filename = 'lain42-asset-studio-' + platform.lower() + '.zip'
         package = files['dist/' + filename]
         digest = sha(package)
@@ -194,6 +262,8 @@ def main():
                 or receipt['contains_spine_runtime'] is not True or receipt['size'] != len(package)):
             raise ValueError('Product bytes differ from formal receipt')
         record = inspect_package(package, platform)
+        inspect_icons(package, files, platform)
+        record['actual_lyco_icon_bytes_verified'] = True
         distributable = {filename: package, filename + '.sha256': files['dist/' + filename + '.sha256']}
         if platform == 'Windows':
             setup = 'lain42-asset-studio-windows-setup.exe'
