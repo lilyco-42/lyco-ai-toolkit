@@ -117,7 +117,7 @@ def inspect_package(data, platform):
         notices = json.loads(archive.read(PREFIX + 'THIRD-PARTY-NOTICES.json'))
         agreement = archive.read(PREFIX + 'SPINE-RUNTIME-LICENSE.html').decode('utf-8')
         runtime = [item for item in notices if item.get('ecosystem') == 'Spine Runtimes']
-        if (len(runtime) != 1 or runtime[0]['notices']['current-agreement'] != agreement
+        if (len(runtime) != 1 or runtime[0]['notices']['current-agreement'].replace('\r\n', '\n') != agreement.replace('\r\n', '\n')
                 or 'Spine Runtimes License Agreement' not in agreement or len(agreement) < 1000
                 or 'not MIT' not in runtime[0]['license']):
             raise ValueError('Full distinct Spine license missing')

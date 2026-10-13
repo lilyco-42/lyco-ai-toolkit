@@ -39,8 +39,11 @@ class FullProductPolicyTests(unittest.TestCase):
         self.assertTrue(result['both_original_native_engines_present'])
         self.assertTrue(result['full_spine_notice_verified'])
 
+    def test_only_platform_line_endings_may_differ_in_full_agreement(self):
+        result = module.inspect_package(self.package('platform-newlines'), 'Linux')
+        self.assertTrue(result['full_spine_notice_verified'])
     def package(self, bad=None):
-        agreement = 'Spine Runtimes License Agreement ' + 'Own policy fixture. ' * 80
+        agreement = 'Spine Runtimes License Agreement\n' + 'Own policy fixture.\n' * 80
         records = {'_internal/bin/laic': b'\x7fELF' + b'own-test-fixture' * 100,
                    '_internal/bin/lyco-spine-render': b'\x7fELF' + b'own-test-fixture' * 100,
                    'SPINE-RUNTIME-LICENSE.html': agreement.encode(),
@@ -50,6 +53,8 @@ class FullProductPolicyTests(unittest.TestCase):
                    'UI-package-lock.json': json.dumps({'version': '0.1.1'}).encode()}
         for name in ('LICENSE', 'SPINE-TOOL-SOURCE-LICENSE', 'SPINE-Cargo.lock', 'AIC-Cargo.lock'):
             records[name] = b'Own fixture, never shipped as a license. ' * 10
+        if bad == 'platform-newlines':
+            records['SPINE-RUNTIME-LICENSE.html'] = agreement.replace('\n', '\r\n').encode()
         if bad == 'missing-engine':
             del records['_internal/bin/lyco-spine-render']
         if bad == 'missing-license':
