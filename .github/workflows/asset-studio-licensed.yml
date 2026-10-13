@@ -20,7 +20,7 @@ concurrency:
   group: asset-studio-licensed-${{ github.ref }}
   cancel-in-progress: true
 env:
-  APP_COMMIT: ${{ inputs.app_commit || '04c7d34ed931f1e44ed800d490d39100b1b9cf11' }}
+  APP_COMMIT: ${{ inputs.app_commit || 'a308ad03671a2b8d415b85ff2d7e2e7bfc42796b' }}
 jobs:
   build:
     strategy:
