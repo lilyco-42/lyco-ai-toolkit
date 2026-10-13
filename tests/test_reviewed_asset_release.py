@@ -39,9 +39,16 @@ class FullProductPolicyTests(unittest.TestCase):
         self.assertTrue(result['both_original_native_engines_present'])
         self.assertTrue(result['full_spine_notice_verified'])
 
-    def test_only_platform_line_endings_may_differ_in_full_agreement(self):
-        result = module.inspect_package(self.package('platform-newlines'), 'Linux')
-        self.assertTrue(result['full_spine_notice_verified'])
+    def test_exact_windows_text_translation_handles_mixed_upstream_newlines(self):
+        record = 'Full own fixture.\nSecond line.\r\nThird line.\n'
+        written = record.replace('\n', '\r\n')
+        self.assertIn('\r\r\n', written)
+        self.assertTrue(module.full_agreement_matches(record, record, 'Linux'))
+        self.assertTrue(module.full_agreement_matches(record, written, 'Windows'))
+        self.assertFalse(module.full_agreement_matches(record, written, 'Linux'))
+        self.assertFalse(module.full_agreement_matches(record, written.replace('Third', 'Changed'), 'Windows'))
+        self.assertFalse(module.full_agreement_matches(record, record.replace('\r\n', '\n'), 'Windows'))
+
     def package(self, bad=None):
         agreement = 'Spine Runtimes License Agreement\n' + 'Own policy fixture.\n' * 80
         records = {'_internal/bin/laic': b'\x7fELF' + b'own-test-fixture' * 100,

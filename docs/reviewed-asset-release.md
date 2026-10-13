@@ -8,3 +8,5 @@
 
 
 草稿存储只保留 CI 文件，始终 draft=true，不能自动公开；以实际 GitHub 资产摘要核对并保存完整文件 manifest。不删除既有 Actions 产物或发行文件。
+
+协议检查保留完整原文与逐文件摘要；Windows 仅接受原始全文或生产者 text-mode write 的精确换行转换，不删除任意 CR、不忽略正文变化。混合 LF/CRLF 的实际正式包须由独立审查门验证。
