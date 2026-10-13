@@ -1,0 +1,43 @@
+name: Reviewed Licensed Asset Release
+on:
+  pull_request:
+    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/reviewed-asset-release.md']
+  push:
+    branches: [main]
+    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/reviewed-asset-release.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: reviewed-licensed-asset-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  inspect:
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: lilyco-42/lilyco
+          ref: a308ad03671a2b8d415b85ff2d7e2e7bfc42796b
+          path: public-app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Rejection policy and exact full-product manifest regressions
+        run: |
+          python -m unittest discover -s tests -p test_reviewed_asset_release.py -v
+          python -m unittest discover -s tests -p test_store_ci_draft.py -v
+      - name: Read actual formal archives, native/installed receipts and independent SDK bytes
+        run: python scripts/reviewed_asset_release.py
+      - name: Preserve review and six unchanged assets in an unpublished draft
+        run: python scripts/store_ci_draft.py --name reviewed-full-asset-release --path reviewed-release/
