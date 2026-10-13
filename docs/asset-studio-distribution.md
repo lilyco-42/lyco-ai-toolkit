@@ -37,3 +37,18 @@ SDK 与运行时为不同组件，SDK 署名不能代替 Spine Runtime 的独立
 正式组合包需公共 main 及本库当前源码的全部门通过；候选 PR 包不作为正式交付。
 
 界面使用同一个 React/shadcn 静态产物，Windows WebView2 不暴露 Python API。安装器为当前用户安装，卸载仅删除包内明确列出的文件。独立产品 CI 也必须通过真实 WebView2 的 AIC 预览、导出与正常关闭清理，安装后的完整应用再次验证 AIC + Spine，然后卸载并验证用户自存文件保留。构建、前端检查与全部测试只在 GitHub Actions，未通过不发布。
+
+## 0.1.2 Lyco 图标构建（2026-10-14）
+
+新组合构建固定公共正式 main a2b9709f80afd654b2d6eaf323ba49f8378ab005。
+生成图来自 lyco-ip/platform/software（source PNG SHA256
+668059834636febc2df2fa467d5009c922bd3b973ef61370a3be9e7cf66198e1），
+完整角色资产许可独立保留。公共包装器在 Actions 验证 PNG 透明性、七尺寸 ICO，
+检查程序与安装器 PE 的实际图像字节，并回读 WebView2 原生窗口图标。
+双引擎、SDK、完整 Runtime 许可、离线真实处理、安装与安全卸载门保持不变。
+
+既有 Actions artifact 存储额度曾耗尽。成功后的完整字节与验收记录改为使用已有
+store_ci_draft.py，存到自己仓库以当前 CI run/commit 标识的不可变 unpublished draft。
+这不是对外发行，也不能将 PR 的临时 merge 构建当正式 main 制品；不删除旧制品，
+不覆盖不同资产，缺少完整产物仍失败。发布仍须独立核查当前正式源码及全部门禁。
+0.1.1 的旧审查记录与旧包保留，但不能冒充本次含图标的 0.1.2。
