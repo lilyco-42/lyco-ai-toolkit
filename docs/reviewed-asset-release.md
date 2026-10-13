@@ -10,3 +10,16 @@
 草稿存储只保留 CI 文件，始终 draft=true，不能自动公开；以实际 GitHub 资产摘要核对并保存完整文件 manifest。不删除既有 Actions 产物或发行文件。
 
 协议检查保留完整原文与逐文件摘要；Windows 仅接受原始全文或生产者 text-mode write 的精确换行转换，不删除任意 CR、不忽略正文变化。混合 LF/CRLF 的实际正式包须由独立审查门验证。
+
+## 0.1.2 图标完整组合审查
+
+准确产品源：公共89174d5df61dd22725643a5b21b40a212e7fa12f，
+私库85ddd9758a74e7948db65e17a1f4158161d267b5；正式产品run38446052892。
+两库当前正式门均已通过。公共此提交只修改素材测试/文档，按path规则触发Asset Studio
+与完整普通CI；Vision未触发，不使用旧Vision通过记录证明这个新提交。
+
+存储输入是该正式run/commit生成的不可变unpublished draft，而不是过期的Actions artifact。
+审查仍验证完整六发行文件、所有manifest、实际两个引擎与SDK/Runtime独立完整许可，
+原生窗口、安装、卸载和用户文件保留证据。另核对Lyco源PNG、七尺寸ICO、完整角色许可，
+直接读取程序和setup的PE资源，并与真实native Icon.Save收据相符。审查只在Actions执行，
+不重建产品或执行收到的二进制。旧0.1.1的完整审查历史保留在原提交与不可变收据中。
