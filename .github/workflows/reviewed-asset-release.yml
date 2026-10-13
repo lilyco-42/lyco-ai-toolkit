@@ -1,10 +1,10 @@
 name: Reviewed Licensed Asset Release
 on:
   pull_request:
-    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/asset-studio-distribution.md']
+    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/reviewed-asset-release.md']
   push:
     branches: [main]
-    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/asset-studio-distribution.md']
+    paths: ['scripts/reviewed_asset_release.py', 'tests/test_reviewed_asset_release.py', '.github/workflows/reviewed-asset-release.yml', 'docs/reviewed-asset-release.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,6 +14,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inspect:
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -31,12 +34,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Rejection policy and exact full-product manifest regressions
-        run: python -m unittest discover -s tests -p test_reviewed_asset_release.py -v
+        run: |
+          python -m unittest discover -s tests -p test_reviewed_asset_release.py -v
+          python -m unittest discover -s tests -p test_store_ci_draft.py -v
       - name: Read actual formal archives, native/installed receipts and independent SDK bytes
         run: python scripts/reviewed_asset_release.py
-      - name: Preserve byte review and six unchanged distribution assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: reviewed-full-asset-release-${{ github.sha }}
-          path: reviewed-release/
-          if-no-files-found: error
+      - name: Preserve review and six unchanged assets in an unpublished draft
+        run: python scripts/store_ci_draft.py --name reviewed-full-asset-release --path reviewed-release/

@@ -109,6 +109,8 @@ def inspect_package(data, platform):
                 raise ValueError('Packaged file differs: ' + name)
         suffix = '.exe' if platform == 'Windows' else ''
         for name in ['_internal/bin/laic' + suffix, '_internal/bin/lyco-spine-render' + suffix]:
+            if PREFIX + name not in names:
+                raise ValueError('Original native engine missing')
             body = archive.read(PREFIX + name)
             if len(body) < 1000 or not body.startswith(b'MZ' if suffix else b'\x7fELF'):
                 raise ValueError('Original native engine missing')
