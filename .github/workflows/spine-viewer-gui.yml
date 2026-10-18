@@ -1,0 +1,70 @@
+name: Spine Viewer GUI build
+
+# The Spine renderer links the official Spine runtime, which is under the Spine
+# Runtimes License Agreement - a commercial licence. A binary built from it is
+# therefore not something this repository may hand out: whoever ships one needs
+# their own Spine licence. Nothing is published anywhere; the artifact goes to
+# your run and nowhere else.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'apps/lyco-spine-viewer/**'
+      - '.github/workflows/spine-viewer-gui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build viewer (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/lyco-spine-viewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/lyco-spine-viewer
+          # Cache the registry as well as target/, so a cold runner does not
+          # re-download ~300 crates for tao + wry. The key is stable across
+          # source edits, so a rebuild only compiles this crate itself.
+          cache-all-crates: true
+          cache-on-failure: true
+          key: spine-viewer
+
+      - name: what this build links, and under what licence
+        shell: bash
+        run: |
+          cat <<'EOF'
+          ============================================================
+          This binary links the official Spine runtime through
+          lyco-spine-render. A binary built from it may only be used or
+          shipped by someone holding a valid Spine licence of their own.
+          The artifact is for this run only, and is not published.
+          ============================================================
+          EOF
+
+      - name: Build viewer
+        run: cargo build --release
+
+      - name: Verify the build stamp is in the binary
+        shell: pwsh
+        run: |
+          $exe = "target\release\lyco-spine-viewer.exe"
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if (-not $ascii.Contains("lyco-spine-viewer-0.1.0")) {
+            throw "build stamp not found - the exe was not built from this source"
+          }
+
+      - name: Upload the exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyco-spine-viewer-windows
+          path: apps/lyco-spine-viewer/target/release/lyco-spine-viewer.exe
+          if-no-files-found: error

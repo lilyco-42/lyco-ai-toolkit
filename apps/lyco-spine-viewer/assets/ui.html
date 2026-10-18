@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyco Spine Viewer</title>
+<style>
+  :root {
+    --bg: #16161e;
+    --panel: #1e1e2a;
+    --panel2: #2a2a3a;
+    --line: #3a3a4e;
+    --text: #dcdcdc;
+    --dim: #8a8aa0;
+    --accent: #7aa2f7;
+    --ok: #9ece6a;
+    --err: #f7768e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header .badge {
+    font-size: 11px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 1px 8px;
+  }
+  main { flex: 1; display: flex; min-height: 0; }
+  #sidebar {
+    width: 320px; min-width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 12px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  section { display: flex; flex-direction: column; gap: 6px; }
+  section h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--dim); font-weight: 600;
+  }
+  label { font-size: 12px; color: var(--dim); }
+  input[type=text], input[type=number], select {
+    background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 4px;
+    color: var(--text); padding: 6px 8px; font-size: 12px; width: 100%;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=color] {
+    width: 100%; height: 30px; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 4px; padding: 2px;
+  }
+  button {
+    background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 4px;
+    color: var(--text); padding: 7px 10px; font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #16161e; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { flex: 1; }
+  .row > button { flex: 0 0 auto; padding: 7px 14px; }
+  #canvas-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: repeating-conic-gradient(#20202c 0% 25%, #23232f 0% 50%) 50% / 24px 24px;
+    padding: 16px; overflow: auto;
+  }
+  canvas {
+    background: #000;
+    border: 1px solid var(--line); border-radius: 4px;
+    max-width: 100%; max-height: 100%; image-rendering: pixelated;
+  }
+  #status {
+    padding: 6px 12px; font-size: 12px;
+    border-top: 1px solid var(--line); background: var(--panel);
+    color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .hint { font-size: 11px; color: var(--dim); }
+  kbd {
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 3px; padding: 0 4px; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <strong>Lyco Spine Viewer</strong>
+  <span class="badge">Spine 3.8</span>
+  <span class="badge" id="stamp"></span>
+</header>
+
+<main>
+  <div id="sidebar">
+    <section>
+      <h2>骨架文件</h2>
+      <label>Atlas (.atlas)</label>
+      <input type="text" id="atlas" placeholder="D:\assets\spine\op\char_xxx.atlas">
+      <label>Skeleton (.skel / .json)</label>
+      <input type="text" id="skel" placeholder="同目录的 char_xxx.skel">
+      <div class="row">
+        <button id="btn-load" class="primary">加载</button>
+      </div>
+      <div class="hint">两个文件填好后点「加载」，或回车。atlas 的贴图须与它同目录。</div>
+    </section>
+
+    <section>
+      <h2>骨架信息</h2>
+      <div class="hint" id="info">未加载</div>
+    </section>
+
+    <section>
+      <h2>播放</h2>
+      <label>动画</label>
+      <select id="anim" disabled></select>
+      <label>进度</label>
+      <input type="range" id="time" min="0" max="1000" value="0" disabled>
+      <div class="row">
+        <button id="btn-play" disabled>播放</button>
+        <button id="btn-stop" disabled>复位</button>
+      </div>
+      <label>速度 (fps) <span id="fps-val">24</span></label>
+      <input type="range" id="fps" min="2" max="60" value="24">
+    </section>
+
+    <section>
+      <h2>画面</h2>
+      <div class="row">
+        <label>宽 <input type="number" id="width" value="512" min="64" max="2048" step="64"></label>
+        <label>高 <input type="number" id="height" value="512" min="64" max="2048" step="64"></label>
+      </div>
+      <label>背景 <span class="hint">勾选透明则忽略颜色</span></label>
+      <div class="row">
+        <input type="color" id="bg" value="#000000">
+        <label style="flex:0 0 auto; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+          <input type="checkbox" id="bgTrans" checked style="width:auto;"> 透明
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h2>导出</h2>
+      <label>输出目录</label>
+      <input type="text" id="outdir" placeholder="留空 = skel 所在目录">
+      <div class="row">
+        <button id="btn-export-png" disabled>单帧 PNG</button>
+        <button id="btn-export-gif" disabled>动画 GIF</button>
+      </div>
+      <div class="hint">GIF 使用当前帧数 × 时间长度。导出结果会显示路径。</div>
+    </section>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas" width="512" height="512"></canvas>
+  </div>
+</main>
+
+<div id="status">就绪</div>
+
+<script>
+'use strict';
+
+const BUILD_STAMP = 'lyco-spine-viewer';
+const $ = (id) => document.getElementById(id);
+
+let nextId = 1;
+const pending = new Map();
+
+function post(verb, args) {
+  const id = nextId++;
+  window.chrome.webview.postMessage([id, verb].concat(args).join('|'));
+  return new Promise((resolve) => pending.set(id, resolve));
+}
+
+function __reply(id, json) {
+  const resolve = pending.get(id);
+  if (!resolve) return;
+  pending.delete(id);
+  resolve(json);
+}
+
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+let anims = [];
+let playing = false;
+let interval = null;
+let currentTime = parseFloat($('time').value) / 1000;
+
+function bgArgs() {
+  if ($('bgTrans').checked) return '0,0,0,0';
+  const hex = $('bg').value.replace('#', '');
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `${r},${g},${b},255`;
+}
+
+function sizeArgs() {
+  const w = clamp(parseInt($('width').value) || 512, 64, 2048);
+  const h = clamp(parseInt($('height').value) || 512, 64, 2048);
+  $('width').value = w;
+  $('height').value = h;
+  $('canvas').width = w;
+  $('canvas').height = h;
+  return [w, h];
+}
+
+function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+
+let canvasImg = null;
+
+function drawDataUrl(url) {
+  if (canvasImg) {
+    canvasImg.onload = null;
+  }
+  const img = canvasImg = new Image();
+  img.onload = () => {
+    const c = $('canvas');
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+  };
+  img.src = url;
+}
+
+function selectedAnimation() {
+  const v = $('anim').value;
+  return v === '-setup-' ? '-' : v;
+}
+
+function animationDuration(name) {
+  const a = anims.find((x) => x.name === name);
+  return a ? a.seconds : 2.0;
+}
+
+async function loadSkeleton() {
+  const atlas = $('atlas').value.trim();
+  const skel = $('skel').value.trim();
+  if (!atlas || !skel) {
+    setStatus('请先填写 atlas 与 skel 路径', 'err');
+    return;
+  }
+  $('btn-load').disabled = true;
+  setStatus(`加载 ${skel} …`);
+  try {
+    const r = await post('load', [atlas, skel]);
+    if (!r.ok) {
+      setStatus(`加载失败：${r.error}`, 'err');
+      return;
+    }
+    anims = r.animations || [];
+    const sel = $('anim');
+    sel.innerHTML = '';
+    const setup = document.createElement('option');
+    setup.value = '-setup-';
+    setup.textContent = '(setup pose)';
+    sel.appendChild(setup);
+    for (const a of anims) {
+      const opt = document.createElement('option');
+      opt.value = a.name;
+      opt.textContent = `${a.name}  (${a.seconds.toFixed(2)}s)`;
+      sel.appendChild(opt);
+    }
+    sel.disabled = false;
+    $('btn-play').disabled = false;
+    $('btn-stop').disabled = false;
+    $('btn-export-png').disabled = false;
+    $('btn-export-gif').disabled = false;
+    $('info').textContent =
+      `版本 ${r.version} · hash ${r.hash}\n` +
+      `${r.meshes} mesh / ${r.vertices} 顶点 / ${r.triangles} 三角形\n` +
+      `${r.bones} 骨骼 · ${r.slots} 槽 · ${anims.length} 个动画`;
+    $('time').disabled = false;
+    $('time').min = 0;
+    $('time').max = Math.max(1, animationDuration(selectedAnimation()) * 1000);
+    setStatus(`已加载 ${skel}`, 'ok');
+    await renderStill(true);
+  } finally {
+    $('btn-load').disabled = false;
+  }
+}
+
+async function renderStill(resetTime) {
+  if (resetTime) {
+    if (selectedAnimation() === '-') {
+      currentTime = 0;
+    } else if (currentTime >= animationDuration(selectedAnimation())) {
+      currentTime = 0;
+    }
+  }
+  const [w, h] = sizeArgs();
+  const anim = selectedAnimation();
+  const t = anim === '-' ? 0 : currentTime;
+  const r = await post('still', [$('atlas').value.trim(), $('skel').value.trim(), anim, t.toFixed(3), w, h, bgArgs()]);
+  if (!r.ok) {
+    setStatus(`渲染失败：${r.error}`, 'err');
+    return;
+  }
+  drawDataUrl(r.dataUrl);
+}
+
+function stepPlay() {
+  const anim = selectedAnimation();
+  if (anim === '-') {
+    const r = {}; // idle for setup pose
+    renderStill(false);
+    return r;
+  }
+  const dur = animationDuration(anim);
+  currentTime = (currentTime + 1000 / ($('fps').value)) % dur;
+  $('time').value = currentTime * 1000;
+  renderStill(false);
+}
+
+function startPlay() {
+  if (playing) return;
+  if (selectedAnimation() === '-') return;
+  playing = true;
+  $('btn-play').textContent = '暂停';
+  interval = setInterval(stepPlay, 1000 / ($('fps').value));
+}
+
+function stopPlay() {
+  playing = false;
+  clearInterval(interval);
+  $('btn-play').textContent = '播放';
+}
+
+async function exportPng() {
+  const [w, h] = sizeArgs();
+  const skel = $('skel').value.trim();
+  const dir = $('outdir').value.trim();
+  const base = skel.split(/[\\/]/).pop() || 'skeleton';
+  const baseName = base.replace(/\.(skel|json)$/i, '');
+  const anim = selectedAnimation();
+  const t = anim === '-' ? 0 : currentTime;
+  const out = joinPath(dir, `${baseName}${anim === '-' ? '_setup' : '_' + anim}_t${t.toFixed(2)}.png`);
+  setStatus(`导出 PNG → ${out} …`);
+  const r = await post('export-png', [$('atlas').value.trim(), skel, anim, t.toFixed(3), w, h, bgArgs(), out]);
+  if (!r.ok) setStatus(`导出失败：${r.error}`, 'err');
+  else setStatus(`已导出 ${r.path}（尺寸 ${w}×${h}）`, 'ok');
+}
+
+async function exportGif() {
+  const skel = $('skel').value.trim();
+  const anim = selectedAnimation();
+  if (anim === '-') {
+    setStatus('setup pose 没有时长，无法做成 GIF', 'err');
+    return;
+  }
+  const dur = animationDuration(anim);
+  const fps = parseFloat($('fps').value) || 24;
+  const frames = clamp(Math.round(dur * fps), 4, 600);
+  const [w, h] = sizeArgs();
+  const dir = $('outdir').value.trim();
+  const base = skel.split(/[\\/]/).pop() || 'skeleton';
+  const baseName = base.replace(/\.(skel|json)$/i, '');
+  const out = joinPath(dir, `${baseName}_${anim}.gif`);
+  setStatus(`导出 GIF → ${out}（${frames} 帧 @ ${fps} fps）…`);
+  const r = await post('export-gif', [$('atlas').value.trim(), skel, anim, frames, fps, w, h, bgArgs(), out]);
+  if (!r.ok) setStatus(`导出失败：${r.error}`, 'err');
+  else setStatus(`已导出 ${r.path}（${r.frames} 帧）`, 'ok');
+}
+
+function joinPath(dir, name) {
+  if (!dir) return name;
+  return dir.replace(/[\\/]+$/, '') + '\\' + name;
+}
+
+$('btn-load').addEventListener('click', loadSkeleton);
+$('atlas').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
+$('skel').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
+
+$('anim').addEventListener('change', () => {
+  currentTime = 0;
+  $('time').value = 0;
+  $('time').max = Math.max(1, animationDuration(selectedAnimation()) * 1000);
+  renderStill(false);
+});
+
+$('time').addEventListener('input', () => {
+  currentTime = parseFloat($('time').value) / 1000;
+  renderStill(false);
+});
+
+$('btn-play').addEventListener('click', () => {
+  if (playing) stopPlay(); else startPlay();
+});
+$('btn-stop').addEventListener('click', () => {
+  stopPlay();
+  currentTime = 0;
+  $('time').value = 0;
+  renderStill(true);
+});
+$('fps').addEventListener('input', () => {
+  $('fps-val').textContent = $('fps').value;
+  if (playing) {
+    clearInterval(interval);
+    interval = setInterval(stepPlay, 1000 / ($('fps').value));
+  }
+});
+$('bg').addEventListener('input', () => renderStill(false));
+$('bgTrans').addEventListener('change', () => renderStill(false));
+$('width').addEventListener('change', () => { sizeArgs(); renderStill(false); });
+$('height').addEventListener('change', () => { sizeArgs(); renderStill(false); });
+
+$('btn-export-png').addEventListener('click', exportPng);
+$('btn-export-gif').addEventListener('click', exportGif);
+
+$('stamp').textContent = BUILD_STAMP;
+$('width').value = 512;
+$('height').value = 512;
+</script>
+</body>
+</html>
