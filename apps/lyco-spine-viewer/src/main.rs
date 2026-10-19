@@ -191,7 +191,7 @@ fn do_export_png(args: &mut std::str::Split<'_, char>) -> Option<String> {
         time,
         anchor: Anchor::Centre,
     };
-    Some(match render_to_file(&src, &req, PathBuf::from(out)) {
+    Some(match render_to_file(&src, &req, &PathBuf::from(out)) {
         Ok(frame) => json!({
             "ok": true,
             "path": out,
@@ -224,7 +224,7 @@ fn do_export_gif(args: &mut std::str::Split<'_, char>) -> Option<String> {
         time: 0.0,
         anchor: Anchor::Centre,
     };
-    Some(match render_animation(&src, &req, PathBuf::from(out), frames, fps) {
+    Some(match render_animation(&src, &req, &PathBuf::from(out), frames, fps) {
         Ok(written) => json!({ "ok": true, "path": out, "frames": written }).to_string(),
         Err(err) => json!({ "ok": false, "error": format!("{err:#}") }).to_string(),
     })
