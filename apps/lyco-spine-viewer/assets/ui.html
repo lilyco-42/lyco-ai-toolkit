@@ -181,7 +181,7 @@
 <script>
 'use strict';
 
-const BUILD_STAMP = 'lyco-spine-viewer';
+const BUILD_STAMP = window.__BUILD_STAMP || 'lyco-spine-viewer (dev)';
 const $ = (id) => document.getElementById(id);
 
 let nextId = 1;
@@ -224,6 +224,10 @@ function __drop(pair) {
     if (!$('atlas').value.trim()) {
       $('atlas').value = siblingOf(value, 'atlas');
     }
+  } else if (field === 'unknown') {
+    const name = value.split(/[\\/]/).pop() || value;
+    setStatus(`不认识「${name}」：请拖 .atlas / .skel / .png，或整个素材文件夹`, 'err');
+    return;
   } else {
     return;
   }

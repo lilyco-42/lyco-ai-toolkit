@@ -61,7 +61,7 @@ fn run() -> wry::Result<()> {
     let shared = Arc::clone(&ui);
 
     let window = WindowBuilder::new()
-        .with_title("Lyco Spine Viewer")
+        .with_title(format!("Lyco Spine Viewer {BUILD_STAMP}"))
         .with_inner_size(LogicalSize::new(1180.0, 760.0))
         .with_min_inner_size(LogicalSize::new(920.0, 600.0))
         .build(&event_loop)
@@ -71,6 +71,10 @@ fn run() -> wry::Result<()> {
     let html = include_str!("../assets/ui.html");
     let webview = WebViewBuilder::new_with_web_context(&mut context)
         .with_html(html)
+        .with_initialization_script(&format!(
+            "window.__BUILD_STAMP = '{}';",
+            BUILD_STAMP.replace('\'', "\\'")
+        ))
         .with_devtools(true)
         .with_ipc_handler({
             let shared = Arc::clone(&ui);
@@ -122,26 +126,75 @@ fn run() -> wry::Result<()> {
 }
 
 /// A file was dropped onto the window: fill whichever field it matches and
-/// load automatically when the pair is complete. `tao` emits one event per
-/// dropped file; though a skel is almost always named `char.skel` next to
-/// `char.atlas`, so the sibling is probed on disk instead of guessing blindly.
+/// let the page load when the pair is complete. Users reach for the `.png`
+/// (the most visible of the triplet) or the whole folder as often as for
+/// the atlas/skel themselves, so those are resolved to a sibling pair here.
 fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
-    let ext = match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => ext.to_ascii_lowercase(),
-        None => return,
-    };
-    let field = match ext.as_str() {
-        "atlas" => Some("atlas"),
-        "skel" | "json" => Some("skel"),
-        _ => None,
-    };
-    let Some(field) = field else {
+    // A folder: take the first atlas inside (or a skeleton, and find its atlas).
+    if path.is_dir() {
+        let mut atlas: Option<std::path::PathBuf> = None;
+        let mut skel: Option<std::path::PathBuf> = None;
+        let mut entries: Vec<_> = std::fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for entry in &entries {
+            match ext_of(entry).as_str() {
+                "atlas" if atlas.is_none() => atlas = Some(entry.clone()),
+                "skel" | "json" if skel.is_none() => skel = Some(entry.clone()),
+                _ => {}
+            }
+        }
+        if let Some(atlas) = atlas.or_else(|| skel.as_deref().and_then(|s| sibling(s, "atlas"))) {
+            forward_drop(webview, "atlas", &atlas);
+        } else {
+            forward_unknown(webview, path);
+        }
         return;
-    };
+    }
+
+    let ext = ext_of(path);
+    match ext.as_str() {
+        "atlas" => forward_drop(webview, "atlas", path),
+        "skel" | "json" => forward_drop(webview, "skel", path),
+        // The texture shares the skeleton's stem, so it names the pair.
+        "png" | "webp" => match sibling(path, "atlas") {
+            Some(atlas) => forward_drop(webview, "atlas", &atlas),
+            None => forward_unknown(webview, path),
+        },
+        _ => forward_unknown(webview, path),
+    }
+}
+
+fn ext_of(path: &std::path::Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+/// `char.png` next to `char.atlas` / `char.skel` — probe on disk.
+fn sibling(path: &std::path::Path, ext: &str) -> Option<std::path::PathBuf> {
+    let stem = path.file_stem()?;
+    let candidate = path.with_file_name(format!("{}.{}", stem.to_string_lossy(), ext));
+    candidate.is_file().then_some(candidate)
+}
+
+fn forward_drop(webview: &wry::WebView, field: &str, path: &std::path::Path) {
     let value = path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
     let js = format!("__drop(['{field}', '{value}']);");
     let _ = webview.evaluate_script(&js);
     trace(&format!("dropped {field}: {value}"));
+}
+
+fn forward_unknown(webview: &wry::WebView, path: &std::path::Path) {
+    let value = path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let js = format!("__drop(['unknown', '{value}']);");
+    let _ = webview.evaluate_script(&js);
+    trace(&format!("dropped unknown: {value}"));
 }
 
 /// Deliver finished replies and dropped files to the page: one
