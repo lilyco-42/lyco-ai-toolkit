@@ -519,13 +519,22 @@ function safeName(name) {
   return name.replace(/[\\/:*?"<>|]/g, '_');
 }
 
+// Empty outdir means "the directory containing the .skel", never the
+// process CWD (which may be System32 when launched elevated — os error 5).
+function exportDir(skel) {
+  const d = $('outdir').value.trim();
+  if (d) return d;
+  const cut = skel.replace(/[\\/][^\\/]*$/, '');
+  return cut || '.';
+}
+
 let batchCancel = false;
 let exportingAll = false;
 
 async function exportPng() {
   const [w, h] = exportSize();
   const skel = $('skel').value.trim();
-  const dir = $('outdir').value.trim();
+  const dir = exportDir(skel);
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
   const anim = selectedAnimation();
@@ -548,7 +557,7 @@ async function exportGif() {
   const fps = parseFloat($('fps').value) || 24;
   const frames = clamp(Math.round(dur * fps), 4, 600);
   const [w, h] = exportSize();
-  const dir = $('outdir').value.trim();
+  const dir = exportDir(skel);
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
   const out = joinPath(dir, `${baseName}_${safeName(anim)}.gif`);
@@ -571,7 +580,7 @@ async function exportAllGif() {
   }
   const fps = parseFloat($('fps').value) || 24;
   const [w, h] = exportSize();
-  const dir = $('outdir').value.trim();
+  const dir = exportDir(skel);
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
   batchCancel = false;
