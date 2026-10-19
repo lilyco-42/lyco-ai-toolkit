@@ -58,8 +58,9 @@ jobs:
           $exe = "target\release\lyco-spine-viewer.exe"
           $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
           $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
-          if (-not $ascii.Contains("lyco-spine-viewer-0.1.0")) {
-            throw "build stamp not found - the exe was not built from this source"
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if (-not $ascii.Contains("lyco-spine-viewer-$version")) {
+            throw "build stamp lyco-spine-viewer-$version not found - the exe was not built from this source"
           }
 
       - name: Upload the exe
