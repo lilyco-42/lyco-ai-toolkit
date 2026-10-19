@@ -127,31 +127,13 @@ fn run() -> wry::Result<()> {
 
 /// A file was dropped onto the window: fill whichever field it matches and
 /// let the page load when the pair is complete. Users reach for the `.png`
-/// (the most visible of the triplet) or the whole folder as often as for
-/// the atlas/skel themselves, so those are resolved to a sibling pair here.
+/// (the most visible of the triplet), a single asset folder, or a whole
+/// collection folder holding many assets — all resolve to a pair here.
 fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
-    // A folder: take the first atlas inside (or a skeleton, and find its atlas).
     if path.is_dir() {
-        let mut atlas: Option<std::path::PathBuf> = None;
-        let mut skel: Option<std::path::PathBuf> = None;
-        let mut entries: Vec<_> = std::fs::read_dir(path)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .collect();
-        entries.sort();
-        for entry in &entries {
-            match ext_of(entry).as_str() {
-                "atlas" if atlas.is_none() => atlas = Some(entry.clone()),
-                "skel" | "json" if skel.is_none() => skel = Some(entry.clone()),
-                _ => {}
-            }
-        }
-        if let Some(atlas) = atlas.or_else(|| skel.as_deref().and_then(|s| sibling(s, "atlas"))) {
-            forward_drop(webview, "atlas", &atlas);
-        } else {
-            forward_unknown(webview, path);
+        match scan_for_atlas(path) {
+            Some(atlas) => forward_drop(webview, "atlas", &atlas),
+            None => forward_unknown(webview, path),
         }
         return;
     }
@@ -167,6 +149,50 @@ fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
         },
         _ => forward_unknown(webview, path),
     }
+}
+
+/// Breadth-first, a few levels deep: an asset folder has the pair at its
+/// root, a collection folder has one folder per asset (e.g. Arknights
+/// `spine/op/<char>/<variant>/pair`). Nearest layer wins, entries sorted so
+/// the pick is deterministic. Capped so a huge tree cannot stall a drop.
+fn scan_for_atlas(root: &std::path::Path) -> Option<std::path::PathBuf> {
+    const MAX_DEPTH: u32 = 4;
+    const MAX_ENTRIES: usize = 2_000;
+
+    let mut queue: std::collections::VecDeque<(std::path::PathBuf, u32)> =
+        std::collections::VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+    let mut visited = 0usize;
+    // A first skeleton seen with no atlas yet; its sibling may be one entry later.
+    let mut fallback: Option<std::path::PathBuf> = None;
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            if visited >= MAX_ENTRIES {
+                return None;
+            }
+            visited += 1;
+            if path.is_dir() {
+                if depth < MAX_DEPTH {
+                    queue.push_back((path, depth + 1));
+                }
+                continue;
+            }
+            match ext_of(&path).as_str() {
+                "atlas" => return Some(path),
+                "skel" | "json" if fallback.is_none() => {
+                    fallback = sibling(&path, "atlas");
+                }
+                _ => {}
+            }
+        }
+    }
+    fallback
 }
 
 fn ext_of(path: &std::path::Path) -> String {
