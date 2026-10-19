@@ -137,7 +137,13 @@ fn run() -> wry::Result<()> {
 /// let the page load when the pair is complete. Users reach for the `.png`
 /// (the most visible of the triplet), a single asset folder, or a whole
 /// collection folder holding many assets — all resolve to a pair here.
+/// Dotfiles are refused: they are never assets, and the renderer once left
+/// `.lyco-3.8-*` cleaned-atlas copies behind that a scan would pick first.
 fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
+    if is_dotfile(path) {
+        forward_unknown(webview, path);
+        return;
+    }
     if path.is_dir() {
         match scan_for_atlas(path) {
             Some(atlas) => forward_drop(webview, "atlas", &atlas),
@@ -157,6 +163,12 @@ fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
         },
         _ => forward_unknown(webview, path),
     }
+}
+
+fn is_dotfile(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with('.'))
 }
 
 /// Breadth-first, a few levels deep: an asset folder has the pair at its
@@ -185,6 +197,9 @@ fn scan_for_atlas(root: &std::path::Path) -> Option<std::path::PathBuf> {
                 return None;
             }
             visited += 1;
+            if is_dotfile(&path) {
+                continue;
+            }
             if path.is_dir() {
                 if depth < MAX_DEPTH {
                     queue.push_back((path, depth + 1));

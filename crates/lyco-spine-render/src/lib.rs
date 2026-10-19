@@ -178,50 +178,35 @@ fn check_version(src: &SpineSource) -> Result<()> {
     }
 }
 
-/// Hand the runtime an atlas it can actually read.
+/// Hand the runtime atlas text it can actually read, from memory.
 ///
-/// The runtime opens the atlas file itself, and a 3.8 parser that meets one
-/// page field it does not know - `pma`, which every Arknights enemy atlas
-/// carries - refuses the whole file. So the repair has to happen before the
-/// call, not after the failure.
-///
-/// Returns the path to read, plus that path again when it is a temporary copy
-/// the caller must delete. The copy sits *beside* the original because page
-/// images are resolved relative to the atlas.
-fn readable_atlas(path: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
+/// The runtime parses the atlas itself, and a 3.8 parser that meets one page
+/// field it does not know - `pma`, which every Arknights enemy atlas carries -
+/// refuses the whole file. So the repair happens before the call: the stripped
+/// text is handed over as bytes plus the directory page images are resolved
+/// against. The earlier write-a-temporary-copy-beside-the-original approach
+/// left files behind on Windows whenever the C layer's file handle outlived
+/// the delete, and a leftover then masked as a real asset to folder scans.
+fn readable_atlas(path: &Path) -> Result<Vec<u8>> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    let stripped = AtlasText::parse(&text).strip_after_3_8();
-    if !stripped.changed {
-        return Ok((path.to_path_buf(), None));
-    }
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default();
-    let mut temp = path.to_path_buf();
-    temp.set_file_name(format!(".lyco-3.8-{}-{nanos}.atlas", std::process::id()));
-    std::fs::write(&temp, &stripped.text)
-        .with_context(|| format!("cannot write a cleaned copy beside {}", path.display()))?;
-    Ok((temp.clone(), Some(temp)))
+    Ok(AtlasText::parse(&text).strip_after_3_8().text.into_bytes())
 }
 
 /// Load the skeleton data, binary or JSON.
 fn load(src: &SpineSource) -> Result<Arc<SkeletonData>> {
     check_version(src)?;
-    let (atlas_path, cleanup) = readable_atlas(&src.atlas)?;
-    let loaded = build(src, &atlas_path);
-    if let Some(temp) = cleanup {
-        // Nothing keeps reading the file once the skeleton data is built.
-        let _ = std::fs::remove_file(&temp);
-    }
-    loaded
+    build(src)
 }
 
-fn build(src: &SpineSource, atlas_path: &Path) -> Result<Arc<SkeletonData>> {
+fn build(src: &SpineSource) -> Result<Arc<SkeletonData>> {
+    let atlas_bytes = readable_atlas(&src.atlas)?;
+    let dir = match src.atlas.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
     let atlas = Arc::new(
-        SpineAtlas::new_from_file(atlas_path)
+        SpineAtlas::new(&atlas_bytes, dir)
             .with_context(|| format!("cannot read {}", src.atlas.display()))?,
     );
     let data = if src.binary {
