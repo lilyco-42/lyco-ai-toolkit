@@ -89,9 +89,36 @@ fn run() -> wry::Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => *control_flow = ControlFlow::Exit,
+            Event::WindowEvent {
+                event: WindowEvent::DroppedFile(path),
+                ..
+            } => on_dropped(&webview, &path),
             _ => {}
         }
     });
+}
+
+/// A file was dropped onto the window: fill whichever field it matches and
+/// load automatically when the pair is complete. `tao` emits one event per
+/// dropped file; though a skel is almost always named `char.skel` next to
+/// `char.atlas`, so the sibling is probed on disk instead of guessing blindly.
+fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
+    let ext = match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => ext.to_ascii_lowercase(),
+        None => return,
+    };
+    let field = match ext.as_str() {
+        "atlas" => Some("atlas"),
+        "skel" | "json" => Some("skel"),
+        _ => None,
+    };
+    let Some(field) = field else {
+        return;
+    };
+    let value = path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let js = format!("__drop(['{field}', '{value}']);");
+    let _ = webview.evaluate_script(&js);
+    trace(&format!("dropped {field}: {value}"));
 }
 
 /// Deliver every finished reply to the page, one `__reply(id, json)` call each.

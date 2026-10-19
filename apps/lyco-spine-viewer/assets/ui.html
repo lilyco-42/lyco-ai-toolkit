@@ -195,6 +195,42 @@ function __reply(id, json) {
   resolve(json);
 }
 
+// A file was dropped onto the window. A skel named `char.atlas` sits beside
+// `char.skel`, so whenever only one side is given we guess the sibling at the
+// same path before trying to load.
+function siblingOf(path, ext) {
+  const i = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
+  if (i < 0) return path + '.' + ext;
+  const dir = path.slice(0, i + 1);
+  const name = path.slice(i + 1).replace(/\.[^.]+$/, '');
+  return dir + name + '.' + ext;
+}
+
+function __drop(pair) {
+  const field = pair[0];
+  const value = pair[1];
+  if (field === 'atlas') {
+    $('atlas').value = value;
+    if (!$('skel').value.trim()) {
+      $('skel').value = siblingOf(value, 'skel');
+    }
+  } else if (field === 'skel') {
+    $('skel').value = value;
+    if (!$('atlas').value.trim()) {
+      $('atlas').value = siblingOf(value, 'atlas');
+    }
+  } else {
+    return;
+  }
+  const atlas = $('atlas').value.trim();
+  const skel = $('skel').value.trim();
+  if (atlas && skel) {
+    loadSkeleton();
+  } else {
+    setStatus(`已放置 ${field}：${value}，请再提供另一侧文件`, 'ok');
+  }
+}
+
 function setStatus(text, cls) {
   const el = $('status');
   el.textContent = text;
