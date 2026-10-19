@@ -75,15 +75,16 @@
   .row > * { flex: 1; }
   .row > button { flex: 0 0 auto; padding: 7px 14px; }
   #canvas-wrap {
-    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex: 1; display: flex; align-items: stretch; justify-content: stretch;
     background: repeating-conic-gradient(#20202c 0% 25%, #23232f 0% 50%) 50% / 24px 24px;
-    padding: 16px; overflow: auto;
+    padding: 16px; min-width: 0; min-height: 0;
   }
+  #canvas-cell { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
   canvas {
-    background: #000;
+    background: transparent;
     border: 1px solid var(--line); border-radius: 4px;
-    max-width: 100%; max-height: 100%; image-rendering: pixelated;
     cursor: grab; touch-action: none;
+    max-width: 100%; max-height: 100%;
   }
   canvas.dragging { cursor: grabbing; }
   #status {
@@ -104,7 +105,7 @@
 
 <header>
   <strong>Lyco Spine Viewer</strong>
-  <span class="badge">Spine 3.8</span>
+  <span class="badge">Spine 3.8 · WebGL 实时预览</span>
   <span class="badge" id="stamp"></span>
 </header>
 
@@ -119,7 +120,7 @@
       <div class="row">
         <button id="btn-load" class="primary">加载</button>
       </div>
-      <div class="hint">两个文件填好后点「加载」，或回车。atlas 的贴图须与它同目录。</div>
+      <div class="hint">把 atlas / skel / png 或整个素材文件夹拖进窗口也行。</div>
     </section>
 
     <section>
@@ -137,12 +138,14 @@
         <button id="btn-play" disabled>播放</button>
         <button id="btn-stop" disabled>复位</button>
       </div>
-      <label>速度 (fps) <span id="fps-val">24</span></label>
-      <input type="range" id="fps" min="2" max="60" value="24">
+      <label>速度 <span id="speed-val">1.0x</span></label>
+      <input type="range" id="speed" min="10" max="200" value="100">
     </section>
 
     <section>
-      <h2>画面</h2>
+      <h2>导出（Rust headless 渲染）</h2>
+      <label>GIF 帧率 (fps) <span id="fps-val">24</span></label>
+      <input type="range" id="fps" min="2" max="60" value="24">
       <div class="row">
         <label>宽 <input type="number" id="width" value="512" min="64" max="2048" step="64"></label>
         <label>高 <input type="number" id="height" value="512" min="64" max="2048" step="64"></label>
@@ -154,10 +157,6 @@
           <input type="checkbox" id="bgTrans" checked style="width:auto;"> 透明
         </label>
       </div>
-    </section>
-
-    <section>
-      <h2>导出</h2>
       <label>输出目录</label>
       <input type="text" id="outdir" placeholder="留空 = skel 所在目录">
       <div class="row">
@@ -167,17 +166,18 @@
       <div class="row">
         <button id="btn-export-all" disabled>全部动画 GIF</button>
       </div>
-      <div class="hint">GIF 使用当前帧数 × 时间长度。导出结果会显示路径。</div>
+      <div class="hint">导出使用左侧尺寸与背景，与预览视图无关。</div>
     </section>
   </div>
 
   <div id="canvas-wrap">
-    <canvas id="canvas" width="512" height="512"></canvas>
+    <div id="canvas-cell"><canvas id="canvas"></canvas></div>
   </div>
 </main>
 
 <div id="status">就绪</div>
 
+<script>/*__SPINE_RUNTIME__*/</script>
 <script>
 'use strict';
 
@@ -200,15 +200,25 @@ function __reply(id, json) {
   resolve(json);
 }
 
-// A file was dropped onto the window. A skel named `char.atlas` sits beside
-// `char.skel`, so whenever only one side is given we guess the sibling at the
-// same path before trying to load.
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+
 function siblingOf(path, ext) {
   const i = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
   if (i < 0) return path + '.' + ext;
   const dir = path.slice(0, i + 1);
   const name = path.slice(i + 1).replace(/\.[^.]+$/, '');
   return dir + name + '.' + ext;
+}
+
+function dirOf(path) {
+  const i = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
+  return i < 0 ? '' : path.slice(0, i + 1);
 }
 
 function __drop(pair) {
@@ -240,78 +250,129 @@ function __drop(pair) {
   }
 }
 
-function setStatus(text, cls) {
-  const el = $('status');
-  el.textContent = text;
-  el.className = cls || '';
-}
+// ---------------------------------------------------------------------------
+// WebGL preview: the official spine-ts 3.8 runtime renders every frame on the
+// GPU (PRTS-wiki architecture), so playing never touches PNG encoding, IPC,
+// or image decode — the per-frame still pipeline that used to flicker is gone.
+// ---------------------------------------------------------------------------
 
-let anims = [];
+let glCtx = null;
+let renderer = null;
+let skeleton = null;
+let state = null;
+let trackEntry = null;
 let playing = false;
-let interval = null;
-let currentTime = parseFloat($('time').value) / 1000;
+let fitZoom = 1;
+let seekHoldUntil = 0;
+let anims = [];
 
-function bgArgs() {
-  if ($('bgTrans').checked) return '0,0,0,0';
-  const hex = $('bg').value.replace('#', '');
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  return `${r},${g},${b},255`;
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
-function sizeArgs() {
-  const w = clamp(parseInt($('width').value) || 512, 64, 2048);
-  const h = clamp(parseInt($('height').value) || 512, 64, 2048);
-  $('width').value = w;
-  $('height').value = h;
-  $('canvas').width = w;
-  $('canvas').height = h;
-  return [w, h];
+function loadImageFromBase64(b64) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('贴图解码失败'));
+    img.src = 'data:image/png;base64,' + b64;
+  });
 }
 
-function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
-
-let canvasImg = null;
-
-// Display transform on top of the rendered frame: wheel zoom anchors on the
-// cursor, drag pans, double-click resets. The Rust render size is untouched.
-const view = { zoom: 1, panX: 0, panY: 0 };
-
-function viewLabel() {
-  return Math.round(view.zoom * 100) + '%';
+function onResize() {
+  const canvas = $('canvas');
+  const cell = $('canvas-cell');
+  if (!cell) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(64, Math.floor(cell.clientWidth * dpr));
+  const h = Math.max(64, Math.floor(cell.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  if (renderer) {
+    const gl = glCtx.gl;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    renderer.camera.setViewport(canvas.width, canvas.height);
+    renderer.camera.update();
+  }
 }
 
-function redraw() {
-  const img = canvasImg;
-  const c = $('canvas');
-  const ctx = c.getContext('2d');
-  ctx.clearRect(0, 0, c.width, c.height);
-  if (!img || !img.complete || !img.naturalWidth) return;
-  ctx.imageSmoothingEnabled = false;
-  const base = Math.min(c.width / img.naturalWidth, c.height / img.naturalHeight);
-  const s = base * view.zoom;
-  const w = img.naturalWidth * s;
-  const h = img.naturalHeight * s;
-  const x = (c.width - w) / 2 + view.panX;
-  const y = (c.height - h) / 2 + view.panY;
-  ctx.drawImage(img, x, y, w, h);
+function initWebGL() {
+  if (renderer) return true;
+  const canvas = $('canvas');
+  try {
+    glCtx = new spine.webgl.ManagedWebGLRenderingContext(canvas, { alpha: true });
+    renderer = new spine.webgl.SceneRenderer(canvas, glCtx);
+    onResize();
+    new ResizeObserver(onResize).observe($('canvas-cell'));
+    window.addEventListener('resize', onResize);
+    requestAnimationFrame(loop);
+    return true;
+  } catch (e) {
+    setStatus(`WebGL 初始化失败：${e}`, 'err');
+    return false;
+  }
+}
+
+// Fit the setup pose into the canvas and centre it; wheel zoom and drag pan
+// move the camera relative to this fit.
+function fitView() {
+  if (!skeleton || !renderer) return;
+  skeleton.setToSetupPose();
+  skeleton.updateWorldTransform();
+  const offset = new spine.Vector2();
+  const size = new spine.Vector2();
+  skeleton.getBounds(offset, size);
+  const cam = renderer.camera;
+  const canvas = $('canvas');
+  if (size.x <= 0 || size.y <= 0) {
+    cam.zoom = 1;
+    cam.position.set(0, 0, 0);
+  } else {
+    cam.position.set(offset.x + size.x / 2, offset.y + size.y / 2, 0);
+    cam.zoom = Math.max(size.x * 1.12 / canvas.width, size.y * 1.12 / canvas.height);
+  }
+  fitZoom = cam.zoom;
+  cam.update();
+  setStatus('视图复位（缩放 100%）');
 }
 
 function resetView() {
-  view.zoom = 1;
-  view.panX = 0;
-  view.panY = 0;
-  redraw();
+  fitView();
 }
 
-function drawDataUrl(url) {
-  if (canvasImg) {
-    canvasImg.onload = null;
+function zoomLabel() {
+  if (!renderer || !fitZoom) return '100%';
+  return Math.round(fitZoom / renderer.camera.zoom * 100) + '%';
+}
+
+let lastFrame = performance.now();
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (!renderer || !skeleton || !state) return;
+  if (playing) {
+    state.update(dt * (parseFloat($('speed').value) || 100) / 100);
+    if (trackEntry && now > seekHoldUntil) {
+      const dur = animationDuration(selectedAnimation());
+      const shown = dur > 0 ? trackEntry.trackTime % dur : trackEntry.trackTime;
+      $('time').value = clamp(shown * 1000, 0, parseFloat($('time').max));
+    }
   }
-  const img = canvasImg = new Image();
-  img.onload = redraw;
-  img.src = url;
+  state.apply(skeleton);
+  skeleton.updateWorldTransform();
+  const gl = glCtx.gl;
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  renderer.begin();
+  renderer.drawSkeleton(skeleton, false);
+  renderer.end();
 }
 
 function selectedAnimation() {
@@ -322,6 +383,19 @@ function selectedAnimation() {
 function animationDuration(name) {
   const a = anims.find((x) => x.name === name);
   return a ? a.seconds : 2.0;
+}
+
+function playAnimation(name) {
+  if (!state || !skeleton) return;
+  if (name === '-') {
+    state.clearTracks();
+    trackEntry = null;
+    skeleton.setToSetupPose();
+  } else {
+    trackEntry = state.setAnimation(0, name, true);
+  }
+  $('time').value = 0;
+  $('time').max = Math.max(1, animationDuration(name) * 1000);
 }
 
 async function loadSkeleton() {
@@ -340,94 +414,123 @@ async function loadSkeleton() {
       return;
     }
     anims = r.animations || [];
-    const sel = $('anim');
-    sel.innerHTML = '';
-    const setup = document.createElement('option');
-    setup.value = '-setup-';
-    setup.textContent = '(setup pose)';
-    sel.appendChild(setup);
-    for (const a of anims) {
-      const opt = document.createElement('option');
-      opt.value = a.name;
-      opt.textContent = `${a.name}  (${a.seconds.toFixed(2)}s)`;
-      sel.appendChild(opt);
-    }
-    sel.disabled = false;
-    $('btn-play').disabled = false;
-    $('btn-stop').disabled = false;
-    $('btn-export-png').disabled = false;
-    $('btn-export-gif').disabled = false;
-    $('btn-export-all').disabled = false;
-    resetView();
-    $('info').textContent =
-      `版本 ${r.version} · hash ${r.hash}\n` +
-      `${r.meshes} mesh / ${r.vertices} 顶点 / ${r.triangles} 三角形\n` +
-      `${r.bones} 骨骼 · ${r.slots} 槽 · ${anims.length} 个动画`;
-    $('time').disabled = false;
-    $('time').min = 0;
-    $('time').max = Math.max(1, animationDuration(selectedAnimation()) * 1000);
-    setStatus(`已加载 ${skel}`, 'ok');
-    await renderStill(true);
+    await initWebGLRuntime(atlas, skel, r);
   } finally {
     $('btn-load').disabled = false;
   }
 }
 
-async function renderStill(resetTime) {
-  if (resetTime) {
-    if (selectedAnimation() === '-') {
-      currentTime = 0;
-    } else if (currentTime >= animationDuration(selectedAnimation())) {
-      currentTime = 0;
-    }
-  }
-  const [w, h] = sizeArgs();
-  const anim = selectedAnimation();
-  const t = anim === '-' ? 0 : currentTime;
-  const r = await post('still', [$('atlas').value.trim(), $('skel').value.trim(), anim, t.toFixed(3), w, h, bgArgs()]);
-  if (!r.ok) {
-    setStatus(`渲染失败：${r.error}`, 'err');
+async function initWebGLRuntime(atlas, skel, info) {
+  const [atlasRes, skelRes] = await Promise.all([
+    post('read', [atlas]),
+    post('read', [skel]),
+  ]);
+  if (!atlasRes.ok) { setStatus(`读取 atlas 失败：${atlasRes.error}`, 'err'); return; }
+  if (!skelRes.ok) { setStatus(`读取 skeleton 失败：${skelRes.error}`, 'err'); return; }
+  const atlasText = new TextDecoder().decode(base64ToBytes(atlasRes.bytes));
+
+  // 3.8 atlas: the first non-empty line names the page texture. Arknights
+  // atlases are single-page (531/531 sampled), so one texture serves every
+  // region.
+  const pngName = (atlasText.split(/\r?\n/).find((l) => l.trim()) || '').trim();
+  if (!pngName) { setStatus('atlas 里没有贴图页名字', 'err'); return; }
+  const pngRes = await post('read', [dirOf(atlas) + pngName]);
+  if (!pngRes.ok) { setStatus(`读取贴图 ${pngName} 失败：${pngRes.error}`, 'err'); return; }
+
+  let img;
+  try {
+    img = await loadImageFromBase64(pngRes.bytes);
+  } catch (e) {
+    setStatus(String(e), 'err');
     return;
   }
-  drawDataUrl(r.dataUrl);
-}
+  if (!initWebGL()) return;
 
-function stepPlay() {
-  const anim = selectedAnimation();
-  if (anim === '-') {
-    const r = {}; // idle for setup pose
-    renderStill(false);
-    return r;
+  const texture = new spine.webgl.GLTexture(glCtx, img);
+  const spineAtlas = new spine.TextureAtlas(atlasText, () => texture);
+  const binary = new spine.SkeletonBinary(new spine.AtlasAttachmentLoader(spineAtlas));
+  const data = binary.readSkeletonData(base64ToBytes(skelRes.bytes));
+  skeleton = new spine.Skeleton(data);
+  state = new spine.AnimationState(new spine.AnimationStateData(data));
+  trackEntry = null;
+
+  const sel = $('anim');
+  sel.innerHTML = '';
+  const setup = document.createElement('option');
+  setup.value = '-setup-';
+  setup.textContent = '(setup pose)';
+  sel.appendChild(setup);
+  for (const a of anims) {
+    const opt = document.createElement('option');
+    opt.value = a.name;
+    opt.textContent = `${a.name}  (${a.seconds.toFixed(2)}s)`;
+    sel.appendChild(opt);
   }
-  const dur = animationDuration(anim);
-  currentTime = (currentTime + 1000 / ($('fps').value)) % dur;
-  $('time').value = currentTime * 1000;
-  renderStill(false);
-}
+  sel.disabled = false;
+  $('btn-play').disabled = false;
+  $('btn-stop').disabled = false;
+  $('btn-export-png').disabled = false;
+  $('btn-export-gif').disabled = false;
+  $('btn-export-all').disabled = false;
+  $('time').disabled = false;
+  $('info').textContent =
+    `版本 ${info.version} · hash ${info.hash}\n` +
+    `${info.meshes} mesh / ${info.vertices} 顶点 / ${info.triangles} 三角形\n` +
+    `${info.bones} 骨骼 · ${info.slots} 槽 · ${anims.length} 个动画`;
 
-function startPlay() {
-  if (playing) return;
-  if (selectedAnimation() === '-') return;
-  playing = true;
-  $('btn-play').textContent = '暂停';
-  interval = setInterval(stepPlay, 1000 / ($('fps').value));
-}
-
-function stopPlay() {
+  const preferred = anims.find((a) => /^idle/i.test(a.name));
+  sel.value = preferred ? preferred.name : '-setup-';
+  playAnimation(selectedAnimation());
+  fitView();
   playing = false;
-  clearInterval(interval);
   $('btn-play').textContent = '播放';
+  setStatus(`已加载 ${skel}（WebGL 实时预览）`, 'ok');
 }
+
+// ---------------------------------------------------------------------------
+// Exports stay on the Rust headless renderer: identical pixels every run.
+// ---------------------------------------------------------------------------
+
+function bgArgs() {
+  if ($('bgTrans').checked) return '0,0,0,0';
+  const hex = $('bg').value.replace('#', '');
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `${r},${g},${b},255`;
+}
+
+function exportSize() {
+  return [clamp(parseInt($('width').value) || 512, 64, 2048), clamp(parseInt($('height').value) || 512, 64, 2048)];
+}
+
+function exportTime() {
+  if (!trackEntry) return 0;
+  const dur = animationDuration(selectedAnimation());
+  return dur > 0 ? trackEntry.trackTime % dur : trackEntry.trackTime;
+}
+
+function joinPath(dir, name) {
+  if (!dir) return name;
+  return dir.replace(/[\\/]+$/, '') + '\\' + name;
+}
+
+function safeName(name) {
+  return name.replace(/[\\/:*?"<>|]/g, '_');
+}
+
+let batchCancel = false;
+let exportingAll = false;
 
 async function exportPng() {
-  const [w, h] = sizeArgs();
+  const [w, h] = exportSize();
   const skel = $('skel').value.trim();
   const dir = $('outdir').value.trim();
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
   const anim = selectedAnimation();
-  const t = anim === '-' ? 0 : currentTime;
-  const out = joinPath(dir, `${baseName}${anim === '-' ? '_setup' : '_' + anim}_t${t.toFixed(2)}.png`);
+  const t = exportTime();
+  const out = joinPath(dir, `${baseName}${anim === '-' ? '_setup' : '_' + safeName(anim)}_t${t.toFixed(2)}.png`);
   setStatus(`导出 PNG → ${out} …`);
   const r = await post('export-png', [$('atlas').value.trim(), skel, anim, t.toFixed(3), w, h, bgArgs(), out]);
   if (!r.ok) setStatus(`导出失败：${r.error}`, 'err');
@@ -444,28 +547,16 @@ async function exportGif() {
   const dur = animationDuration(anim);
   const fps = parseFloat($('fps').value) || 24;
   const frames = clamp(Math.round(dur * fps), 4, 600);
-  const [w, h] = sizeArgs();
+  const [w, h] = exportSize();
   const dir = $('outdir').value.trim();
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
-  const out = joinPath(dir, `${baseName}_${anim}.gif`);
+  const out = joinPath(dir, `${baseName}_${safeName(anim)}.gif`);
   setStatus(`导出 GIF → ${out}（${frames} 帧 @ ${fps} fps）…`);
   const r = await post('export-gif', [$('atlas').value.trim(), skel, anim, frames, fps, w, h, bgArgs(), out]);
   if (!r.ok) setStatus(`导出失败：${r.error}`, 'err');
   else setStatus(`已导出 ${r.path}（${r.frames} 帧）`, 'ok');
 }
-
-function joinPath(dir, name) {
-  if (!dir) return name;
-  return dir.replace(/[\\/]+$/, '') + '\\' + name;
-}
-
-function safeName(name) {
-  return name.replace(/[\\/:*?"<>|]/g, '_');
-}
-
-let batchCancel = false;
-let exportingAll = false;
 
 async function exportAllGif() {
   if (exportingAll) {
@@ -479,7 +570,7 @@ async function exportAllGif() {
     return;
   }
   const fps = parseFloat($('fps').value) || 24;
-  const [w, h] = sizeArgs();
+  const [w, h] = exportSize();
   const dir = $('outdir').value.trim();
   const base = skel.split(/[\\/]/).pop() || 'skeleton';
   const baseName = base.replace(/\.(skel|json)$/i, '');
@@ -506,85 +597,93 @@ async function exportAllGif() {
   else setStatus(`已导出全部 ${done} 个动画 GIF → ${dir || 'skel 所在目录'}`, 'ok');
 }
 
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
 
 $('btn-load').addEventListener('click', loadSkeleton);
 $('atlas').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
 $('skel').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
 
 $('anim').addEventListener('change', () => {
-  currentTime = 0;
-  $('time').value = 0;
-  $('time').max = Math.max(1, animationDuration(selectedAnimation()) * 1000);
-  renderStill(false);
+  playAnimation(selectedAnimation());
 });
 
 $('time').addEventListener('input', () => {
-  currentTime = parseFloat($('time').value) / 1000;
-  renderStill(false);
+  if (!trackEntry) return;
+  seekHoldUntil = performance.now() + 400;
+  trackEntry.trackTime = parseFloat($('time').value) / 1000;
 });
 
 $('btn-play').addEventListener('click', () => {
-  if (playing) stopPlay(); else startPlay();
+  if (!skeleton) return;
+  if (selectedAnimation() === '-') {
+    setStatus('setup pose 是静止姿势，选一个动画再播放', 'err');
+    return;
+  }
+  playing = !playing;
+  $('btn-play').textContent = playing ? '暂停' : '播放';
 });
 $('btn-stop').addEventListener('click', () => {
-  stopPlay();
-  currentTime = 0;
-  $('time').value = 0;
-  renderStill(true);
+  playing = false;
+  $('btn-play').textContent = '播放';
+  playAnimation(selectedAnimation());
 });
-$('fps').addEventListener('input', () => {
-  $('fps-val').textContent = $('fps').value;
-  if (playing) {
-    clearInterval(interval);
-    interval = setInterval(stepPlay, 1000 / ($('fps').value));
-  }
+$('speed').addEventListener('input', () => {
+  $('speed-val').textContent = (parseFloat($('speed').value) / 100).toFixed(1) + 'x';
 });
-$('bg').addEventListener('input', () => renderStill(false));
-$('bgTrans').addEventListener('change', () => renderStill(false));
-$('width').addEventListener('change', () => { sizeArgs(); renderStill(false); });
-$('height').addEventListener('change', () => { sizeArgs(); renderStill(false); });
 
+$('fps').addEventListener('input', () => { $('fps-val').textContent = $('fps').value; });
 $('btn-export-png').addEventListener('click', exportPng);
 $('btn-export-gif').addEventListener('click', exportGif);
 $('btn-export-all').addEventListener('click', exportAllGif);
 
-// View interaction: wheel zooms around the cursor, drag pans, double-click resets.
+// View interaction on the WebGL canvas: wheel zooms around the cursor
+// (camera.zoom is world units per pixel), drag pans the camera, double-click
+// refits the pose.
 (() => {
   const c = $('canvas');
   c.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    const next = clamp(view.zoom * factor, 0.05, 40);
-    const real = next / view.zoom;
-    if (real === 1) return;
+    if (!renderer) return;
+    const cam = renderer.camera;
+    const factor = e.deltaY < 0 ? 1 / 1.12 : 1.12;
+    const next = clamp(cam.zoom * factor, fitZoom / 40, fitZoom * 20);
+    if (next === cam.zoom) return;
     const rect = c.getBoundingClientRect();
-    const mx = ((e.clientX - rect.left) / rect.width) * c.width;
-    const my = ((e.clientY - rect.top) / rect.height) * c.height;
-    view.panX = mx - (mx - view.panX) * real;
-    view.panY = my - (my - view.panY) * real;
-    view.zoom = next;
-    redraw();
-    setStatus(`缩放 ${viewLabel()}`);
+    const sx = ((e.clientX - rect.left) / rect.width) * c.width;
+    const sy = ((e.clientY - rect.top) / rect.height) * c.height;
+    const before = cam.screenToWorld(new spine.webgl.Vector3(sx, sy, 0), c.width, c.height);
+    cam.zoom = next;
+    cam.update();
+    const after = cam.screenToWorld(new spine.webgl.Vector3(sx, sy, 0), c.width, c.height);
+    cam.position.x += before.x - after.x;
+    cam.position.y += before.y - after.y;
+    cam.update();
+    setStatus(`缩放 ${zoomLabel()}`);
   }, { passive: false });
 
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
   c.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !renderer) return;
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
     c.classList.add('dragging');
   });
   window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
+    if (!dragging || !renderer) return;
+    const cam = renderer.camera;
     const rect = c.getBoundingClientRect();
-    view.panX += ((e.clientX - lastX) / rect.width) * c.width;
-    view.panY += ((e.clientY - lastY) / rect.height) * c.height;
+    const dx = ((e.clientX - lastX) / rect.width) * c.width;
+    const dy = ((e.clientY - lastY) / rect.height) * c.height;
     lastX = e.clientX;
     lastY = e.clientY;
-    redraw();
+    cam.position.x -= dx * cam.zoom;
+    cam.position.y += dy * cam.zoom;
+    cam.update();
   });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
@@ -592,14 +691,13 @@ $('btn-export-all').addEventListener('click', exportAllGif);
     c.classList.remove('dragging');
   });
   c.addEventListener('dblclick', () => {
+    if (!renderer) return;
     resetView();
-    setStatus(`视图复位（缩放 ${viewLabel()}）`);
   });
 })();
 
+onResize();
 $('stamp').textContent = BUILD_STAMP;
-$('width').value = 512;
-$('height').value = 512;
 </script>
 </body>
 </html>

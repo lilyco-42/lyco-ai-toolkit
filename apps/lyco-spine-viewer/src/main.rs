@@ -68,7 +68,15 @@ fn run() -> wry::Result<()> {
         .expect("failed to create the native window");
 
     let mut context = WebContext::new(Some(webview_data_dir()));
-    let html = include_str!("../assets/ui.html");
+    // The page embeds the official spine-ts 3.8 WebGL runtime (the same
+    // architecture PRTS wiki uses): the preview is rendered frame-by-frame in
+    // the browser, so no per-frame PNG encode / IPC / decode can stutter it.
+    // Rust keeps the deterministic headless renders for exports.
+    let html = {
+        let html = include_str!("../assets/ui.html");
+        let runtime = include_str!("../assets/vendor/spine-webgl-3.8.js");
+        html.replace("/*__SPINE_RUNTIME__*/", runtime)
+    };
     let webview = WebViewBuilder::new_with_web_context(&mut context)
         .with_html(html)
         .with_initialization_script(&format!(
@@ -251,12 +259,23 @@ fn handle_ipc(msg: &str) -> Option<(u32, String)> {
 
     let reply = match verb {
         "load" => do_load(parts.next()?.trim(), parts.next()?.trim()),
+        "read" => do_read(parts.next()?.trim()),
         "still" => do_still(&mut parts)?,
         "export-png" => do_export_png(&mut parts)?,
         "export-gif" => do_export_gif(&mut parts)?,
         other => json!({ "ok": false, "error": format!("unknown verb {other}") }).to_string(),
     };
     Some((id, reply))
+}
+
+/// `read|<path>` — raw file bytes as base64, so the page can feed the
+/// in-browser spine runtime (atlas text, skeleton binary, texture) without
+/// a file:// fetch, which WebView2 would refuse.
+fn do_read(path: &str) -> String {
+    match std::fs::read(path) {
+        Ok(bytes) => json!({ "ok": true, "bytes": base64_encode(&bytes) }).to_string(),
+        Err(err) => json!({ "ok": false, "error": format!("{err:#}") }).to_string(),
+    }
 }
 
 /// `load|<atlas>|<skel>` — what the skeleton declares itself to be.
