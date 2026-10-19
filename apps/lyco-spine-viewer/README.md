@@ -21,6 +21,8 @@ gh workflow run "Spine Viewer GUI build" --repo lilyco-42/lyco-ai-toolkit
 1. 运行 `lyco-spine-viewer.exe`
 2. 填入 atlas（`.atlas`）与 skeleton（`.skel` / `.json`）路径
    —— 素材来自明日方舟导出，都是 Spine 3.8；贴图须与 atlas 同目录
+   —— 或直接把文件**拖进窗口任意位置**（含输入框）：自动识别
+   atlas/skel、配对兄弟文件并加载
 3. 点「加载」，从动画下拉选一个，播放 / 拖进度 / 调 fps
 4. 画面：滚轮缩放（以指针为中心）、按住左键拖拽平移、双击复位
 5. 「导出」：单帧 PNG、整段 GIF，或「全部动画 GIF」逐个导出每个动画

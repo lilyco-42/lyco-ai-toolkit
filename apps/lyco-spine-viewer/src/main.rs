@@ -23,7 +23,7 @@ use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::window::WindowBuilder;
-use wry::{WebContext, WebViewBuilder};
+use wry::{DragDropEvent, WebContext, WebViewBuilder};
 
 /// Replies the page is still waiting for, so a slow render never overlaps
 /// into the frame before it.
@@ -31,6 +31,8 @@ use wry::{WebContext, WebViewBuilder};
 struct Ui {
     /// `(request id, json reply)` once the work for that id is done.
     replies: Vec<(u32, String)>,
+    /// Files dropped onto the webview, to forward to the page.
+    drops: Vec<PathBuf>,
 }
 
 fn main() {
@@ -70,13 +72,34 @@ fn run() -> wry::Result<()> {
     let webview = WebViewBuilder::new_with_web_context(&mut context)
         .with_html(html)
         .with_devtools(true)
-        .with_ipc_handler(move |req| {
-            let msg = req.body().clone();
-            trace(&format!("ipc: {msg}"));
-            if let Some(reply) = handle_ipc(&msg) {
-                let mut guard = shared.lock().expect("ui lock");
-                guard.replies.push(reply);
-                let _ = proxy.send_event(());
+        .with_ipc_handler({
+            let shared = Arc::clone(&ui);
+            let proxy = proxy.clone();
+            move |req| {
+                let msg = req.body().clone();
+                trace(&format!("ipc: {msg}"));
+                if let Some(reply) = handle_ipc(&msg) {
+                    let mut guard = shared.lock().expect("ui lock");
+                    guard.replies.push(reply);
+                    let _ = proxy.send_event(());
+                }
+            }
+        })
+        // The webview covers the whole window, so the OLE drop target is
+        // WebView2's: tao's `DroppedFile` never fires on Windows. Claim every
+        // drag event here instead, or the webview swallows it (and a drop can
+        // even navigate the page away to a file:// URL).
+        .with_drag_drop_handler({
+            let shared = Arc::clone(&ui);
+            let proxy = proxy.clone();
+            move |event| match event {
+                DragDropEvent::Drop { paths, .. } => {
+                    let mut guard = shared.lock().expect("ui lock");
+                    guard.drops.extend(paths);
+                    let _ = proxy.send_event(());
+                    true
+                }
+                _ => true,
             }
         })
         .build(&window)?;
@@ -121,12 +144,19 @@ fn on_dropped(webview: &wry::WebView, path: &std::path::Path) {
     trace(&format!("dropped {field}: {value}"));
 }
 
-/// Deliver every finished reply to the page, one `__reply(id, json)` call each.
+/// Deliver finished replies and dropped files to the page: one
+/// `__reply(id, json)` call per reply, one `__drop` per file.
 fn flush(webview: &wry::WebView, ui: &Arc<Mutex<Ui>>) {
-    let replies = {
+    let (replies, drops) = {
         let mut guard = ui.lock().expect("ui lock");
-        std::mem::take(&mut guard.replies)
+        (
+            std::mem::take(&mut guard.replies),
+            std::mem::take(&mut guard.drops),
+        )
     };
+    for path in drops {
+        on_dropped(webview, &path);
+    }
     for (id, json) in replies {
         let js = format!("__reply({id}, {json});");
         let _ = webview.evaluate_script(&js);
