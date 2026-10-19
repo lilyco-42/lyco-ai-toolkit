@@ -83,7 +83,9 @@
     background: #000;
     border: 1px solid var(--line); border-radius: 4px;
     max-width: 100%; max-height: 100%; image-rendering: pixelated;
+    cursor: grab; touch-action: none;
   }
+  canvas.dragging { cursor: grabbing; }
   #status {
     padding: 6px 12px; font-size: 12px;
     border-top: 1px solid var(--line); background: var(--panel);
@@ -161,6 +163,9 @@
       <div class="row">
         <button id="btn-export-png" disabled>单帧 PNG</button>
         <button id="btn-export-gif" disabled>动画 GIF</button>
+      </div>
+      <div class="row">
+        <button id="btn-export-all" disabled>全部动画 GIF</button>
       </div>
       <div class="hint">GIF 使用当前帧数 × 时间长度。导出结果会显示路径。</div>
     </section>
@@ -265,18 +270,43 @@ function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
 let canvasImg = null;
 
+// Display transform on top of the rendered frame: wheel zoom anchors on the
+// cursor, drag pans, double-click resets. The Rust render size is untouched.
+const view = { zoom: 1, panX: 0, panY: 0 };
+
+function viewLabel() {
+  return Math.round(view.zoom * 100) + '%';
+}
+
+function redraw() {
+  const img = canvasImg;
+  const c = $('canvas');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (!img || !img.complete || !img.naturalWidth) return;
+  ctx.imageSmoothingEnabled = false;
+  const base = Math.min(c.width / img.naturalWidth, c.height / img.naturalHeight);
+  const s = base * view.zoom;
+  const w = img.naturalWidth * s;
+  const h = img.naturalHeight * s;
+  const x = (c.width - w) / 2 + view.panX;
+  const y = (c.height - h) / 2 + view.panY;
+  ctx.drawImage(img, x, y, w, h);
+}
+
+function resetView() {
+  view.zoom = 1;
+  view.panX = 0;
+  view.panY = 0;
+  redraw();
+}
+
 function drawDataUrl(url) {
   if (canvasImg) {
     canvasImg.onload = null;
   }
   const img = canvasImg = new Image();
-  img.onload = () => {
-    const c = $('canvas');
-    const ctx = c.getContext('2d');
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-  };
+  img.onload = redraw;
   img.src = url;
 }
 
@@ -323,6 +353,8 @@ async function loadSkeleton() {
     $('btn-stop').disabled = false;
     $('btn-export-png').disabled = false;
     $('btn-export-gif').disabled = false;
+    $('btn-export-all').disabled = false;
+    resetView();
     $('info').textContent =
       `版本 ${r.version} · hash ${r.hash}\n` +
       `${r.meshes} mesh / ${r.vertices} 顶点 / ${r.triangles} 三角形\n` +
@@ -424,6 +456,53 @@ function joinPath(dir, name) {
   return dir.replace(/[\\/]+$/, '') + '\\' + name;
 }
 
+function safeName(name) {
+  return name.replace(/[\\/:*?"<>|]/g, '_');
+}
+
+let batchCancel = false;
+let exportingAll = false;
+
+async function exportAllGif() {
+  if (exportingAll) {
+    batchCancel = true;
+    return;
+  }
+  const skel = $('skel').value.trim();
+  const list = anims.slice();
+  if (!list.length) {
+    setStatus('没有动画可导出', 'err');
+    return;
+  }
+  const fps = parseFloat($('fps').value) || 24;
+  const [w, h] = sizeArgs();
+  const dir = $('outdir').value.trim();
+  const base = skel.split(/[\\/]/).pop() || 'skeleton';
+  const baseName = base.replace(/\.(skel|json)$/i, '');
+  batchCancel = false;
+  exportingAll = true;
+  $('btn-export-all').textContent = '取消导出';
+  let done = 0;
+  let failed = 0;
+  try {
+    for (const a of list) {
+      if (batchCancel) break;
+      const frames = clamp(Math.round(a.seconds * fps), 4, 600);
+      const out = joinPath(dir, `${baseName}_${safeName(a.name)}.gif`);
+      setStatus(`批量导出 ${done + 1}/${list.length}：${a.name}（${frames} 帧 @ ${fps} fps）…`);
+      const r = await post('export-gif', [$('atlas').value.trim(), skel, a.name, frames, fps, w, h, bgArgs(), out]);
+      if (r.ok) done += 1; else { failed += 1; setStatus(`导出 ${a.name} 失败：${r.error}，继续下一个`, 'err'); }
+    }
+  } finally {
+    exportingAll = false;
+    $('btn-export-all').textContent = '全部动画 GIF';
+  }
+  if (batchCancel) setStatus(`已取消：完成 ${done}/${list.length} 个动画`, 'err');
+  else if (failed) setStatus(`完成 ${done}/${list.length}，失败 ${failed} 个`, 'err');
+  else setStatus(`已导出全部 ${done} 个动画 GIF → ${dir || 'skel 所在目录'}`, 'ok');
+}
+
+
 $('btn-load').addEventListener('click', loadSkeleton);
 $('atlas').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
 $('skel').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadSkeleton(); });
@@ -463,6 +542,56 @@ $('height').addEventListener('change', () => { sizeArgs(); renderStill(false); }
 
 $('btn-export-png').addEventListener('click', exportPng);
 $('btn-export-gif').addEventListener('click', exportGif);
+$('btn-export-all').addEventListener('click', exportAllGif);
+
+// View interaction: wheel zooms around the cursor, drag pans, double-click resets.
+(() => {
+  const c = $('canvas');
+  c.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const next = clamp(view.zoom * factor, 0.05, 40);
+    const real = next / view.zoom;
+    if (real === 1) return;
+    const rect = c.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * c.width;
+    const my = ((e.clientY - rect.top) / rect.height) * c.height;
+    view.panX = mx - (mx - view.panX) * real;
+    view.panY = my - (my - view.panY) * real;
+    view.zoom = next;
+    redraw();
+    setStatus(`缩放 ${viewLabel()}`);
+  }, { passive: false });
+
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  c.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    c.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = c.getBoundingClientRect();
+    view.panX += ((e.clientX - lastX) / rect.width) * c.width;
+    view.panY += ((e.clientY - lastY) / rect.height) * c.height;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    redraw();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    c.classList.remove('dragging');
+  });
+  c.addEventListener('dblclick', () => {
+    resetView();
+    setStatus(`视图复位（缩放 ${viewLabel()}）`);
+  });
+})();
 
 $('stamp').textContent = BUILD_STAMP;
 $('width').value = 512;
