@@ -1,0 +1,55 @@
+name: Spine render Linux build
+
+# Builds the headless lyco-spine-render CLI for Linux (x86_64) and uploads
+# it as a run artifact. The render API service on lain42.top wraps this
+# binary; the production server is too memory-constrained (1.6G, shared
+# with the live billing service) to compile Rust itself, so CI is the only
+# build channel. Deploy: download the artifact, scp to
+# /opt/spine-render/bin/lyco-spine-render on the server.
+#
+# Licence note: the binary links the official Spine runtime via
+# rusty_spine; the repository owner accepted distribution responsibility
+# on 2026-10-20 (see spine-viewer-release.yml for the same note).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'crates/lyco-spine-render/**'
+      - 'crates/lyco-spine/**'
+      - '.github/workflows/spine-render-linux.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build lyco-spine-render (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+          cache-on-failure: true
+          key: spine-render-linux
+
+      - name: Build
+        run: cargo build --release -p lyco-spine-render
+
+      - name: Smoke test the binary
+        run: |
+          ./target/release/lyco-spine-render 2>&1 | head -5 || true
+          ./target/release/lyco-spine-render --help 2>&1 | head -3 || true
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyco-spine-render-linux-x64
+          path: target/release/lyco-spine-render
+          if-no-files-found: error
