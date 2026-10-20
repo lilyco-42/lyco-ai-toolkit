@@ -14,6 +14,8 @@ use lyco_spine_render::{
     SpineSource, PARTS,
 };
 
+mod remote;
+
 fn usage() -> String {
     [
         "usage:",
@@ -33,6 +35,15 @@ fn usage() -> String {
         "                     which is how PRTS wiki frames a battle sprite",
         "  --size <WxH>       frame size (default 512x512)",
         "  --background <R,G,B,A>  default 0,0,0,0",
+        "",
+        "hosted mode (draw on lain42.top against a point balance):",
+        "  --remote           render/describe via the hosted API instead",
+        "                     (frame 5 pts, animate 20 pts, describe free;",
+        "                     failed renders are not charged)",
+        "  --token <value>    bearer token, or env SPINE_RENDER_TOKEN",
+        "  --request-id <id>  idempotency key: retries with the same id",
+        "                     are never charged twice",
+        "  --base <url>       API base (default https://lain42.top/studio/render)",
     ]
     .join("\n")
 }
@@ -73,6 +84,9 @@ fn main() -> Result<()> {
                 _ => bail!("{}", usage()),
             };
             let src = SpineSource::new(atlas, skeleton);
+            if args.iter().any(|a| a == "--remote") {
+                return remote::describe(&src, &args);
+            }
             let info = describe(&src)?;
             println!("atlas:     {atlas}");
             println!("skeleton:  {skeleton}");
@@ -270,6 +284,9 @@ fn main() -> Result<()> {
 
             let src = SpineSource::new(atlas, skeleton);
             let into = PathBuf::from(out);
+            if args.iter().any(|a| a == "--remote") {
+                return remote::render(&src, &req, &into, false, 0, 0, &args);
+            }
             let frame = render_to_file(&src, &req, &into)?;
             println!("wrote {} ({width}x{height})", into.display());
             match frame.opaque_bounds() {
@@ -322,6 +339,9 @@ fn main() -> Result<()> {
 
             let src = SpineSource::new(atlas, skeleton);
             let into = PathBuf::from(out);
+            if args.iter().any(|a| a == "--remote") {
+                return remote::render(&src, &req, &into, true, frames, fps, &args);
+            }
             let written = render_animation(&src, &req, &into, frames, fps)?;
             println!(
                 "wrote {} ({written} frames at {fps} fps, {width}x{height})",

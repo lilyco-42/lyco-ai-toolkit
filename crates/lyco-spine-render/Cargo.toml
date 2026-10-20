@@ -17,6 +17,9 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 image = { workspace = true }
+serde_json = { workspace = true }
+ureq = { workspace = true }
+base64 = { workspace = true }
 # Spine 3.8 specifically. The upstream `rusty_spine` crate targets 4.1/4.2, and
 # Arknights exports 3.8, so this is the fork that can read them.
 #
