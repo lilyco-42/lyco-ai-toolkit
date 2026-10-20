@@ -1,0 +1,103 @@
+name: Spine Viewer release
+
+# Publishes the viewer exe + MSI installer to a public GitHub Release for
+# tags v*. NOTE ON LICENSING: the binary links the official Spine runtime
+# (lyco-spine-render). Public distribution is normally restricted by the
+# Spine Runtimes License Agreement; the repository owner has explicitly
+# confirmed on 2026-10-20 that they accept responsibility for shipping
+# builds from this workflow.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release viewer (windows, exe + msi)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/lyco-spine-viewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/lyco-spine-viewer
+          cache-all-crates: true
+          cache-on-failure: true
+          key: spine-viewer
+
+      - name: Verify tag matches Cargo.toml version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_ver=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$tag" != "$cargo_ver" ]; then
+            echo "tag $tag != Cargo.toml $cargo_ver - refusing to release a mislabeled build"
+            exit 1
+          fi
+          echo "VERSION=$tag" >> "$GITHUB_ENV"
+
+      - name: Build viewer
+        run: cargo build --release
+
+      - name: Verify the build stamp is in the binary
+        shell: pwsh
+        run: |
+          $exe = "target\release\lyco-spine-viewer.exe"
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if (-not $ascii.Contains("lyco-spine-viewer-$env:VERSION")) {
+            throw "build stamp lyco-spine-viewer-$env:VERSION not found - the exe was not built from this source"
+          }
+
+      - name: Install WiX v5
+        shell: bash
+        run: dotnet tool install --global wix
+
+      - name: Build MSI installer
+        shell: bash
+        run: |
+          wix build -arch x64 -d "Version=$VERSION" installer.wxs \
+            -o "lyco-spine-viewer-$VERSION-x64.msi"
+          ls -la "lyco-spine-viewer-$VERSION-x64.msi"
+
+      - name: Smoke-test the MSI
+        shell: pwsh
+        run: |
+          # Validate the MSI database is a genuine installable package:
+          # Windows Installer COM can open it and read its ProductVersion.
+          $msi = Resolve-Path "lyco-spine-viewer-$env:VERSION-x64.msi"
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember(
+              "OpenDatabase", "InvokeMethod", $null, $installer,
+              @("$msi", 0))
+          $view = $db.GetType().InvokeMember(
+              "OpenView", "InvokeMethod", $null, $db,
+              @("SELECT `Value` FROM `Property` WHERE `Property` = 'ProductVersion'"))
+          $view.GetType().InvokeMember("Execute", "InvokeMethod", $null, $view, $null)
+          $record = $view.GetType().InvokeMember("Fetch", "InvokeMethod", $null, $view, $null)
+          $version = $record.GetType().InvokeMember(
+              "StringData", "GetProperty", $null, $record, @([int]1))
+          if ($version -ne $env:VERSION) {
+            throw "MSI ProductVersion '$version' != expected '$env:VERSION'"
+          }
+          Write-Host "MSI OK: ProductVersion=$version"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: lyco-spine-viewer ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            apps/lyco-spine-viewer/target/release/lyco-spine-viewer.exe
+            apps/lyco-spine-viewer/lyco-spine-viewer-*-x64.msi

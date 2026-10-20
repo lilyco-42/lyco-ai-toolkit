@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v4/v5 installer definition for lyco-spine-viewer.
+
+  Build (from apps/lyco-spine-viewer, after `cargo build --release`):
+
+      wix build -arch x64 -d Version=0.3.2 installer.wxs \
+        -o lyco-spine-viewer-0.3.2-x64.msi
+
+  - UpgradeCode is FIXED forever: it is the machine identity that lets a
+    0.3.3 MSI replace a 0.3.2 install. Never regenerate it.
+  - Version comes in as a preprocessor variable so CI controls it.
+  - No MSI UI sequence: double-click installs silently to Program Files
+    with a Start-menu shortcut. Uninstall via Settings > Apps.
+  - Exe is unsigned; SmartScreen/Defender may warn on first run.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Lyco Spine Viewer"
+      Version="$(var.Version)"
+      Manufacturer="lilyco-42"
+      UpgradeCode="3555EC4F-FF80-47A2-B6DA-78BEFE47A4AB"
+      Scope="perMachine"
+      Compressed="yes"
+      InstallerVersion="200"
+      Language="1033"
+      Codepage="65001">
+
+    <SummaryInformation
+        Description="Spine 3.8 skeleton previewer with PNG/GIF export" />
+
+    <!-- Upgrades replace; downgrades refuse. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Lyco Spine Viewer is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- App files -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Name="lyco-spine-viewer">
+        <Component Id="MainExe" Guid="*" Bitness="always64">
+          <File Id="ViewerExe" Source="target\release\lyco-spine-viewer.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start-menu shortcut; the registry value is its KeyPath anchor. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut
+            Id="AppShortcut"
+            Name="Lyco Spine Viewer"
+            Description="Spine 3.8 skeleton previewer"
+            Target="[ProgramFiles64Folder]lyco-spine-viewer\lyco-spine-viewer.exe"
+            WorkingDirectory="[ProgramFiles64Folder]lyco-spine-viewer" />
+        <RegistryValue
+            Root="HKLM"
+            Key="Software\lilyco-42\lyco-spine-viewer"
+            Name="StartMenuShortcut"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>
