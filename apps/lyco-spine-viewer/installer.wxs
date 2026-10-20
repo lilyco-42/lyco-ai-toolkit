@@ -36,7 +36,7 @@
 
     <!-- App files -->
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Name="lyco-spine-viewer">
+      <Directory Id="INSTALLDIR" Name="lyco-spine-viewer">
         <Component Id="MainExe" Guid="*" Bitness="always64">
           <File Id="ViewerExe" Source="target\release\lyco-spine-viewer.exe" KeyPath="yes" />
         </Component>
@@ -50,8 +50,8 @@
             Id="AppShortcut"
             Name="Lyco Spine Viewer"
             Description="Spine 3.8 skeleton previewer"
-            Target="[ProgramFiles64Folder]lyco-spine-viewer\lyco-spine-viewer.exe"
-            WorkingDirectory="[ProgramFiles64Folder]lyco-spine-viewer" />
+            Target="[INSTALLDIR]lyco-spine-viewer.exe"
+            WorkingDirectory="INSTALLDIR" />
         <RegistryValue
             Root="HKLM"
             Key="Software\lilyco-42\lyco-spine-viewer"
