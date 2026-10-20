@@ -29,6 +29,11 @@
     <SummaryInformation
         Description="Spine 3.8 skeleton previewer with PNG/GIF export" />
 
+    <!-- App icon: embedded in the exe (build.rs/winresource) and referenced
+         here so the Start-menu shortcut and Add/Remove Programs show it. -->
+    <Icon Id="lyco-spine-viewer.ico" SourceFile="assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="lyco-spine-viewer.ico" />
+
     <!-- Upgrades replace; downgrades refuse. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Lyco Spine Viewer is already installed." />
 
@@ -51,7 +56,8 @@
             Name="Lyco Spine Viewer"
             Description="Spine 3.8 skeleton previewer"
             Target="[INSTALLDIR]lyco-spine-viewer.exe"
-            WorkingDirectory="INSTALLDIR" />
+            WorkingDirectory="INSTALLDIR"
+            Icon="lyco-spine-viewer.ico" />
         <RegistryValue
             Root="HKLM"
             Key="Software\lilyco-42\lyco-spine-viewer"
