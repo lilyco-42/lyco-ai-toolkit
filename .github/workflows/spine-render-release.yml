@@ -13,7 +13,9 @@ name: Spine render client release
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    # 'v*' belongs to the spine-viewer release line; this one keeps its
+    # own prefix so a tag never fires both workflows at once.
+    tags: ["spine-render-v*"]
 
 permissions:
   contents: write
