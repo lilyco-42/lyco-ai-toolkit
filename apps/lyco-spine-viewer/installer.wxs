@@ -2,7 +2,7 @@
 <!--
   WiX v4/v5 installer definition for lyco-spine-viewer.
 
-  Build (from apps/lyco-spine-viewer, after `cargo build --release`):
+  Build (from apps/lyco-spine-viewer, after a release cargo build):
 
       wix build -arch x64 -d Version=0.3.2 installer.wxs \
         -o lyco-spine-viewer-0.3.2-x64.msi
