@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use lyco_spine::Atlas as AtlasText;
-use lyco_spine_render::{RenderRequest, SpineSource};
+use lyco_spine_render::{Anchor, RenderRequest, SpineSource};
 
 const DEFAULT_BASE: &str = "https://lain42.top/studio/render";
 const TIMEOUT: Duration = Duration::from_secs(150);
@@ -22,6 +22,34 @@ const TIMEOUT: Duration = Duration::from_secs(150);
 fn flag(args: &[String], name: &str) -> Option<String> {
     let at = args.iter().position(|a| a == name)?;
     args.get(at + 1).cloned()
+}
+
+/// "centre" | "footline:<0..1>" as the wire format the API takes.
+fn anchor_text(anchor: &Anchor) -> Option<String> {
+    match anchor {
+        Anchor::Centre => None,
+        Anchor::Footline(ratio) => Some(format!("footline:{ratio}")),
+    }
+}
+
+pub fn pricing(args: &[String]) -> Result<()> {
+    let base = flag(args, "--base").unwrap_or_else(|| DEFAULT_BASE.to_string());
+    let url = format!("{base}/pricing");
+    let response = ureq::get(&url)
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|error| match error {
+            ureq::Error::Status(code, response) => {
+                let detail = response.into_string().unwrap_or_default();
+                anyhow!("HTTP {code} from {url}: {detail}")
+            }
+            other => anyhow!("request to {url} failed: {other}"),
+        })?;
+    let payload: Value = response
+        .into_json()
+        .with_context(|| format!("{url} answered with something other than JSON"))?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
 }
 
 fn bearer(args: &[String]) -> Result<String> {
@@ -153,6 +181,9 @@ pub fn render(
     }
     body["width"] = json!(req.width);
     body["height"] = json!(req.height);
+    if let Some(anchor) = anchor_text(&req.anchor) {
+        body["anchor"] = Value::String(anchor);
+    }
     if req.background != [0, 0, 0, 0] {
         body["background"] = json!(req.background);
     }

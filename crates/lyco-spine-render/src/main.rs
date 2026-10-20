@@ -25,6 +25,8 @@ fn usage() -> String {
         "  lyco-spine-render parts_seq <atlas> <skeleton> <out-dir> [options]",
         "  lyco-spine-render render   <atlas> <skeleton> <out.png> [options]",
         "  lyco-spine-render animate  <atlas> <skeleton> <out.gif> [options]",
+        "  lyco-spine-render pricing  [--remote --base <url>]",
+        "  lyco-spine-render --version",
         "",
         "options:",
         "  --frames <n>       animate: how many frames (default 24)",
@@ -78,6 +80,11 @@ fn parse_background(text: &str) -> Result<[u8; 4]> {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("--version") | Some("-V") => {
+            println!("lyco-spine-render {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
+        Some("pricing") => remote::pricing(&args[1..]),
         Some("describe") => {
             let (atlas, skeleton) = match (args.get(1), args.get(2)) {
                 (Some(a), Some(s)) => (a, s),
