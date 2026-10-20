@@ -60,7 +60,9 @@ jobs:
 
       - name: Install WiX v5
         shell: bash
-        run: dotnet tool install --global wix
+        # v6+ demands the OSMF paid EULA; v5 is the last free-for-all line
+        # and speaks the same v4 wxs schema we use.
+        run: dotnet tool install --global wix --version "5.*"
 
       - name: Build MSI installer
         shell: bash
