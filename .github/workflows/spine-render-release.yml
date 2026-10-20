@@ -67,8 +67,8 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           gh release create "$tag" --title "$tag" --generate-notes \
-            target/release/${{ matrix.binary }} \
-            --clobber || \
+            --verify-tag \
+            target/release/${{ matrix.binary }} || \
           gh release upload "$tag" target/release/${{ matrix.binary }} --clobber
         env:
           GH_TOKEN: ${{ github.token }}
