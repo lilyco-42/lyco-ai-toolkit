@@ -13,9 +13,11 @@
 
 const BUILD_STAMP: &str = concat!("lyco-spine-viewer-", env!("CARGO_PKG_VERSION"));
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use lyco_spine::Atlas as AtlasText;
 use lyco_spine_render::{describe, render, render_animation, render_to_file, rig, Anchor,
     RenderRequest, SpineSource};
 use serde_json::json;
@@ -278,6 +280,8 @@ fn handle_ipc(msg: &str) -> Option<(u32, String)> {
         "still" => do_still(&mut parts)?,
         "export-png" => do_export_png(&mut parts)?,
         "export-gif" => do_export_gif(&mut parts)?,
+        "cloud-frame" => do_cloud_render(&mut parts, false)?,
+        "cloud-gif" => do_cloud_render(&mut parts, true)?,
         other => json!({ "ok": false, "error": format!("unknown verb {other}") }).to_string(),
     };
     Some((id, reply))
@@ -398,6 +402,222 @@ fn do_export_gif(args: &mut std::str::Split<'_, char>) -> Option<String> {
         Ok(written) => json!({ "ok": true, "path": out, "frames": written }).to_string(),
         Err(err) => json!({ "ok": false, "error": format!("{err:#}") }).to_string(),
     })
+}
+
+/// `cloud-frame|atlas|skel|anim|time|w|h|bg|token|out` /
+/// `cloud-gif|atlas|skel|anim|frames|fps|w|h|bg|token|out`
+/// — render on lain42.top (billed per call) and write the result to `out`.
+fn do_cloud_render(args: &mut std::str::Split<'_, char>, animate: bool) -> Option<String> {
+    let atlas = args.next()?.trim();
+    let skel = args.next()?.trim();
+    let anim = args.next()?.trim();
+    // Animate names a clip length (frames/fps) instead of a single pose time.
+    let (time, frames, fps): (f32, u32, u32) = if animate {
+        let frames: u32 = args.next()?.trim().parse().ok()?;
+        let fps: u32 = args.next()?.trim().parse().ok()?;
+        (0.0, frames, fps)
+    } else {
+        (args.next()?.trim().parse().ok()?, 0, 0)
+    };
+    let width: u32 = args.next()?.trim().parse().ok()?;
+    let height: u32 = args.next()?.trim().parse().ok()?;
+    let bg = parse_bg(args.next()?.trim())?;
+    let token = args.next()?.trim();
+    let out = args.next()?.trim();
+
+    let pages = match pack_pages(atlas) {
+        Ok(pages) => pages,
+        Err(err) => return Some(json!({ "ok": false, "error": err }).to_string()),
+    };
+    let atlas_bytes = match std::fs::read(atlas) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return Some(
+                json!({ "ok": false, "error": format!("cannot read {atlas}: {err}") }).to_string(),
+            )
+        }
+    };
+    let skel_bytes = match std::fs::read(skel) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return Some(
+                json!({ "ok": false, "error": format!("cannot read {skel}: {err}") }).to_string(),
+            )
+        }
+    };
+
+    // Unique per call so the server can dedupe retries; no extra crate needed.
+    let request_id = {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("viewer-{secs}-{}", std::process::id())
+    };
+
+    let mut body = json!({
+        "atlas": base64_encode(&atlas_bytes),
+        "skel": base64_encode(&skel_bytes),
+        "pages": pages,
+        "width": width,
+        "height": height,
+        "background": bg,
+        "request_id": request_id,
+    });
+    // "-" is the setup pose: the API infers it, but animate still needs a name.
+    if anim != "-" {
+        body["animation"] = json!(anim);
+    }
+    if animate {
+        body["frames"] = json!(frames);
+        body["fps"] = json!(fps);
+    } else {
+        body["time"] = json!(time);
+    }
+
+    let kind = if animate { "animate" } else { "frame" };
+    let url = format!("https://lain42.top/studio/render/{kind}");
+    let response = ureq::post(&url)
+        .timeout(Duration::from_secs(180))
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_json(body);
+
+    let payload = match response {
+        Ok(resp) => match resp.into_json::<serde_json::Value>() {
+            Ok(value) => value,
+            Err(err) => {
+                return Some(
+                    json!({ "ok": false, "error": format!("{url} answered with something other than JSON: {err}") })
+                        .to_string(),
+                )
+            }
+        },
+        Err(ureq::Error::Status(code, resp)) => {
+            let raw = resp.into_string().unwrap_or_default();
+            let value: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or(serde_json::Value::String(raw));
+            if code == 402 {
+                // 402 is the top-up case: `detail` is an object carrying the
+                // recharge packs; anything else is a plain message.
+                let detail = value
+                    .get("detail")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let (message, packs) = match &detail {
+                    serde_json::Value::Object(_) => (
+                        detail
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| detail.to_string()),
+                        detail
+                            .pointer("/recharge/packs_cny")
+                            .cloned()
+                            .unwrap_or_else(|| json!([])),
+                    ),
+                    serde_json::Value::String(text) => (text.clone(), json!([])),
+                    _ => (value.to_string(), json!([])),
+                };
+                return Some(
+                    json!({ "ok": false, "needTopup": true, "error": message, "packs": packs })
+                        .to_string(),
+                );
+            }
+            let detail = match value.get("detail") {
+                Some(serde_json::Value::String(text)) => text.clone(),
+                Some(other) => other.to_string(),
+                None => value.to_string(),
+            };
+            return Some(json!({ "ok": false, "error": detail }).to_string());
+        }
+        Err(other) => {
+            return Some(
+                json!({ "ok": false, "error": format!("request to {url} failed: {other}") })
+                    .to_string(),
+            )
+        }
+    };
+
+    let Some(encoded) = payload.get("image_base64").and_then(|v| v.as_str()) else {
+        return Some(json!({ "ok": false, "error": "the API answered without an image" }).to_string());
+    };
+    let Some(bytes) = base64_decode(encoded) else {
+        return Some(json!({ "ok": false, "error": "the API answered with a broken image" }).to_string());
+    };
+    if let Err(err) = std::fs::write(out, &bytes) {
+        return Some(json!({ "ok": false, "error": format!("cannot write {out}: {err}") }).to_string());
+    }
+    Some(
+        json!({
+            "ok": true,
+            "charged": payload.get("charged").cloned().unwrap_or_else(|| json!(false)),
+            "balance": payload.get("balance").cloned().unwrap_or(serde_json::Value::Null),
+            "path": out,
+            "format": payload.get("format").cloned().unwrap_or_else(|| json!(if animate { "gif" } else { "png" })),
+        })
+        .to_string(),
+    )
+}
+
+/// Base64-decode (standard alphabet, `=` padding). Returns None on malformed input.
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    fn value(byte: u8) -> Option<u32> {
+        match byte {
+            b'A'..=b'Z' => Some((byte - b'A') as u32),
+            b'a'..=b'z' => Some((byte - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((byte - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let cleaned: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if cleaned.len() % 4 != 0 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
+    for chunk in cleaned.chunks(4) {
+        // Padding may only sit in the last two slots of a quartet.
+        let pad = chunk.iter().filter(|&&b| b == b'=').count();
+        if pad > 2 || (pad > 0 && chunk[..2].iter().any(|&b| b == b'=')) {
+            return None;
+        }
+        let mut n = 0u32;
+        for (i, &byte) in chunk.iter().enumerate() {
+            n |= value(byte).unwrap_or(0) << (18 - 6 * i as u32);
+        }
+        out.push((n >> 16) as u8);
+        if pad < 2 {
+            out.push((n >> 8) as u8);
+        }
+        if pad < 1 {
+            out.push(n as u8);
+        }
+    }
+    Some(out)
+}
+
+/// Base64-pack the atlas's page images, mirroring how local rendering finds them.
+fn pack_pages(atlas_path: &str) -> Result<serde_json::Value, String> {
+    let atlas_text = std::fs::read_to_string(atlas_path)
+        .map_err(|err| format!("cannot read {atlas_path}: {err}"))?;
+    let path = Path::new(atlas_path);
+    let beside = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let parsed = AtlasText::parse(&atlas_text);
+    if parsed.pages().is_empty() {
+        return Err(format!("{atlas_path} has no pages"));
+    }
+    let mut pages = Vec::new();
+    for page in parsed.pages() {
+        let png = std::fs::read(beside.join(&page.name))
+            .map_err(|err| format!("cannot read the page image {}: {err}", page.name))?;
+        pages.push(json!({ "name": page.name, "png": base64_encode(&png) }));
+    }
+    Ok(serde_json::Value::Array(pages))
 }
 
 /// Render one pose to a PNG data URL, without touching the disk.

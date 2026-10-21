@@ -15,9 +15,14 @@ description = "Spine 3.8 skeleton previewer: load an atlas/skel pair, play anima
 
 [dependencies]
 lyco-spine-render = { path = "../../crates/lyco-spine-render" }
+# Cloud rendering discovers the page images the same way local rendering does,
+# so the viewer parses the atlas with lyco-spine directly.
+lyco-spine = { path = "../../crates/lyco-spine" }
 image = "0.25"
 anyhow = "1"
 serde_json = "1"
+# The same HTTP client lyco-spine-render already uses for --remote.
+ureq = { version = "2", features = ["json"] }
 # Same versions as the tiny-agent-wry GUI already ships, so the dependency
 # graph is known-good on Windows CI.
 tao = "0.37"

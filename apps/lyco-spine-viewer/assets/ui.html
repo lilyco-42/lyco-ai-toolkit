@@ -166,6 +166,15 @@
       <div class="row">
         <button id="btn-export-all" disabled>全部动画 GIF</button>
       </div>
+      <div class="row">
+        <input type="text" id="cloud-token" placeholder="lain42 令牌（注册送 25 积分）" style="flex:1">
+      </div>
+      <div class="row">
+        <button id="btn-cloud-png" disabled>云端单帧 (5分)</button>
+        <button id="btn-cloud-gif" disabled>云端 GIF (20分)</button>
+        <button id="btn-cloud-topup" title="余额不足时充值">充值</button>
+      </div>
+      <div class="hint" id="cloud-hint">云端渲染把素材上传到 lain42.top 计费渲染；失败不扣费。</div>
       <div class="hint">导出使用左侧尺寸与背景，与预览视图无关。</div>
     </section>
   </div>
@@ -472,6 +481,8 @@ async function initWebGLRuntime(atlas, skel, info) {
   $('btn-export-png').disabled = false;
   $('btn-export-gif').disabled = false;
   $('btn-export-all').disabled = false;
+  $('btn-cloud-png').disabled = false;
+  $('btn-cloud-gif').disabled = false;
   $('time').disabled = false;
   $('info').textContent =
     `版本 ${info.version} · hash ${info.hash}\n` +
@@ -607,6 +618,101 @@ async function exportAllGif() {
 }
 
 // ---------------------------------------------------------------------------
+// Cloud rendering: upload the assets to lain42.top and pay per call (frame
+// 5 pts, animate 20 pts). Failed calls are not charged, so the page just
+// shows the server message and, on 402, the recharge packs the API returned.
+// ---------------------------------------------------------------------------
+
+let lastPacks = null;
+
+function setCloudHint(text) {
+  const s = String(text || '');
+  $('cloud-hint').textContent = s.length > 200 ? s.slice(0, 200) + '…' : s;
+}
+
+function packsText(packs) {
+  if (!Array.isArray(packs) || !packs.length) return '';
+  return packs.map((p) => {
+    if (typeof p === 'number') return '¥' + p;
+    if (p && typeof p === 'object') {
+      const cny = p.cny != null ? p.cny : (p.price_cny != null ? p.price_cny : p.price);
+      const pts = p.points != null ? p.points : p.credits;
+      if (cny != null) return pts != null ? `¥${cny}/${pts}分` : `¥${cny}`;
+    }
+    return null;
+  }).filter(Boolean).join('、');
+}
+
+function applyCloudReply(r, cost) {
+  if (r.ok) {
+    const charged = r.charged ? cost : 0;
+    setStatus(`云端渲染完成 → ${r.path}（余额 ${r.balance}，扣 ${charged} 分）`, 'ok');
+    return;
+  }
+  if (r.needTopup) {
+    lastPacks = Array.isArray(r.packs) ? r.packs : [];
+    setStatus(`积分不足：${r.error}。点「充值」购买积分`, 'err');
+    setCloudHint(`积分不足：${r.error}${lastPacks.length ? `。档位 ${packsText(lastPacks)}` : ''}`);
+    return;
+  }
+  setStatus(`云端渲染失败：${r.error}`, 'err');
+  setCloudHint(r.error);
+}
+
+async function cloudFrame() {
+  const token = $('cloud-token').value.trim();
+  if (!token) {
+    setStatus('请先填入 lain42 令牌（注册即送 25 积分试用）', 'err');
+    return;
+  }
+  const skel = $('skel').value.trim();
+  const anim = selectedAnimation();
+  const t = exportTime();
+  const [w, h] = exportSize();
+  const dir = exportDir(skel);
+  const base = skel.split(/[\\/]/).pop() || 'skeleton';
+  const baseName = base.replace(/\.(skel|json)$/i, '');
+  const out = joinPath(dir, `${baseName}_cloud_${anim === '-' ? 'setup' : safeName(anim)}_t${t.toFixed(2)}.png`);
+  setStatus('云端渲染中（计费 5 积分）…');
+  const r = await post('cloud-frame', [$('atlas').value.trim(), skel, anim, t.toFixed(3), w, h, bgArgs(), token, out]);
+  applyCloudReply(r, 5);
+}
+
+async function cloudGif() {
+  const token = $('cloud-token').value.trim();
+  if (!token) {
+    setStatus('请先填入 lain42 令牌（注册即送 25 积分试用）', 'err');
+    return;
+  }
+  const skel = $('skel').value.trim();
+  const anim = selectedAnimation();
+  if (anim === '-') {
+    setStatus('setup pose 没有时长，无法做成 GIF', 'err');
+    return;
+  }
+  const dur = animationDuration(anim);
+  const fps = parseFloat($('fps').value) || 24;
+  const frames = clamp(Math.round(dur * fps), 4, 600);
+  const [w, h] = exportSize();
+  const dir = exportDir(skel);
+  const base = skel.split(/[\\/]/).pop() || 'skeleton';
+  const baseName = base.replace(/\.(skel|json)$/i, '');
+  const out = joinPath(dir, `${baseName}_cloud_${safeName(anim)}.gif`);
+  setStatus('云端渲染中（计费 20 积分）…');
+  const r = await post('cloud-gif', [$('atlas').value.trim(), skel, anim, frames, fps, w, h, bgArgs(), token, out]);
+  applyCloudReply(r, 20);
+}
+
+function cloudTopup() {
+  const topup = 'https://lain42.top/spine-render/#topup';
+  if (lastPacks && lastPacks.length) {
+    setCloudHint(`档位 ${packsText(lastPacks)}；在 ${topup} 用支付宝/微信充值`);
+  } else {
+    setCloudHint(`在 ${topup} 充值（10 积分 = 1 元，支付宝/微信）`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -646,6 +752,15 @@ $('fps').addEventListener('input', () => { $('fps-val').textContent = $('fps').v
 $('btn-export-png').addEventListener('click', exportPng);
 $('btn-export-gif').addEventListener('click', exportGif);
 $('btn-export-all').addEventListener('click', exportAllGif);
+
+$('btn-cloud-png').addEventListener('click', cloudFrame);
+$('btn-cloud-gif').addEventListener('click', cloudGif);
+$('btn-cloud-topup').addEventListener('click', cloudTopup);
+
+$('cloud-token').value = localStorage.getItem('lain42Token') || '';
+$('cloud-token').addEventListener('input', () => {
+  localStorage.setItem('lain42Token', $('cloud-token').value.trim());
+});
 
 // View interaction on the WebGL canvas: wheel zooms around the cursor
 // (camera.zoom is world units per pixel), drag pans the camera, double-click
